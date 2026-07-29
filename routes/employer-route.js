@@ -10,10 +10,10 @@ import { authMiddleware } from "../middleware/admin-middle-ware.js";
 
 const router = express.Router();
 
-router.post("/create-employer",  createEmployer);
-router.get("/get-all-employers",  getAllEmployers);
-router.get("/get-single-employer/:userId",  getSingleEmployer);
-router.put("/update-employer/:userId",  updateEmployer);
-router.delete("/delete-employer/:userId",  deleteEmployer);
+router.post("/create-employer", authMiddleware, createEmployer);
+router.get("/get-all-employers", authMiddleware, getAllEmployers);
+router.get("/get-single-employer/:userId", authMiddleware, getSingleEmployer);
+router.put("/update-employer/:userId", authMiddleware, updateEmployer);
+router.delete("/delete-employer/:userId", authMiddleware, deleteEmployer);
 
 export default router;

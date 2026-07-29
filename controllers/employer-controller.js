@@ -77,7 +77,6 @@ const createEmployer = async (req, res) => {
 const getAllEmployers = async (req, res) => {
   try {
     const { search = "", page = 1, limit = 10 } = req.query;
- console.log("search :", search)
     const filter = {
       deleted_at: null,
     };

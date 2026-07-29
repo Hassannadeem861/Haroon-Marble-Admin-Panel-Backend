@@ -67,10 +67,10 @@ const login = async (req, res) => {
     return res
       .status(201)
       .cookie("token", token, {
+        httpOnly: true, // JS not access the code
+        secure: false, //HTTP required
         maxage: 15 * 24 * 60 * 60 * 1000, // 15 days
         sameSite: "none", // cross site request allowed
-        httpOnly: true, // JS not access the code
-        secure: true, //HTTPS required
       })
       .json({ message: `Login successful in ${user.username}`, user, token });
   } catch (error) {

@@ -17,17 +17,17 @@ const authMiddleware = async (req, res, next) => {
 
     const verifyToken = jwt.verify(token, process.env.JWT_SECRET);
 
-   const admin = await adminModel.findById(verifyToken.adminId);
+  //  const admin = await adminModel.findById(verifyToken.adminId);
    
-   if (!admin) {
-      return res.status(200).json({ message: "Admin not found" });
-    }
+  //  if (!admin) {
+  //     return res.status(200).json({ message: "Admin not found" });
+  //   }
 
-    req.admin = admin;
+    req.admin = verifyToken;
     
     next();
   } catch (error) {
-    return res.status(200).json({ message: "Invalid token", error: error.message });
+    return res.status(500).json({ message: "Invalid token", error: error.message });
 
   }
 };
