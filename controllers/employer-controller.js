@@ -3,149 +3,113 @@ import User from "../models/employer-model.js";
 const createEmployer = async (req, res) => {
   try {
     const {
-      empNo,
       name,
-      email,
-      mobile_number,
-      designation,
-      account_number,
-      permanent_address,
+      attendence,
+      overTime,
       salary,
-      date_of_birth,
-      date_of_joining,
-      status,
+      designation,
+      salaryType,
+      employerType,
+      currentSite,
+      teamName,
     } = req.body;
 
-    const statusNumber = Number(status);
+    const requiredFields = {
+      name,
+      salary,
+      designation,
+      employerType,
+    };
 
-    if (
-      (empNo,
-      !name ||
-        !email ||
-        !mobile_number ||
-        !designation ||
-        !account_number ||
-        !permanent_address ||
-        !salary ||
-        !date_of_birth ||
-        !date_of_joining ||
-        (statusNumber !== 0 && statusNumber !== 1))
-    ) {
+    const missingFields = Object.keys(requiredFields).filter(
+      (key) =>
+        requiredFields[key] === undefined ||
+        requiredFields[key] === null ||
+        requiredFields[key] === "",
+    );
+
+    if (missingFields.length > 0) {
       return res.status(400).send(`
-        ❌ Required fields are missing.
+        Required fields are missing.
 
-        👉 Example request body (form-data):
-        empNo:1
-        name: Ali Raza
-        email: ali@example.com
-        mobile_number: 03001234567
-        designation: Software Engineer
-        account_number: 1234567890
-        permanent_address: Lahore, Pakistan
-        salary: 80000
-        date_of_birth: 1995-01-01
-        date_of_joining: 2022-06-15
-        status: 1 || 0,
-        fileUpload: [file]
-        pdfUpload: [pdf]
+      Missing Fields:
+      ${missingFields.map((field) => `- ${field}`).join("\n")}
+
+      Example Request Body:
+
+      name: Huzaifa
+      designation: qarigar
+      salary: 1200
+      employerType: owner
+      attendence: present
+      overTime: 2
+      salaryType: daily
+      currentSite: Site A
+      teamName: Owner
       `);
     }
 
-    const existingUser = await User.findOne({ empNo });
-    if (existingUser) {
-      return res.status(409).json({ message: "EmpNo already exists ❌" });
-    }
-
-    // const fileUploadPath = req.files?.fileUpload?.[0]?.filename || null;
-    // const pdfUploadPath = req.files?.pdfUpload?.[0]?.filename || null;
-
-    // ✅ File handling (memory buffer to Base64)
-    let fileUploadData = null;
-    let pdfUploadData = null;
-
-    if (req.files?.fileUpload?.[0]) {
-      const file = req.files.fileUpload[0];
-      console.log("file: ", file);
-      fileUploadData = file.buffer;
-    }
-
-    if (req.files?.pdfUpload?.[0]) {
-      const file = req.files.pdfUpload[0];
-      console.log("file: ", file);
-
-      pdfUploadData = file.buffer;
-    }
-
-    // // ✅ File buffer to Base64
-    // if (req.files?.fileUpload?.[0]) {
-    //   const file = req.files.fileUpload[0];
-    //   console.log("file: ", file);
-
-    //   // updateFields.fileUpload = file.buffer.toString("base64"); // 👈 direct string
-    //   updateFields.fileUpload = file.buffer;
-    //   // updateFields.fileUpload = {
-    //   //   data: file.buffer.toString("base64"),
-    //   //   mimetype: file.mimetype,
-    //   //   originalname: file.originalname,
-    //   // };
-    // }
-
-    // if (req.files?.pdfUpload?.[0]) {
-    //   const file = req.files.pdfUpload[0];
-    //   console.log("file: ", file);
-
-    //   // updateFields.pdfUpload = file.buffer.toString("base64"); // 👈 direct string
-    //   updateFields.pdfUpload = file.buffer; // 👈 direct string
-
-    //   // updateFields.pdfUpload = {
-    //   //   data: file.buffer.toString("base64"),
-    //   //   mimetype: file.mimetype,
-    //   //   originalname: file.originalname,
-    //   // };
-    // }
-
-    const newUser = await User.create({
-      empNo,
+    const employer = await User.create({
       name,
-      email,
-      mobile_number,
-      designation,
-      account_number,
-      permanent_address,
+      attendence,
+      overTime,
       salary,
-      date_of_birth,
-      date_of_joining,
-      fileUpload: fileUploadData,
-      pdfUpload: pdfUploadData,
-      status: statusNumber,
-      created_at: new Date(),
+      designation,
+      salaryType,
+      employerType,
+      currentSite,
+      teamName,
     });
 
     return res.status(201).json({
       success: true,
-      message: "Employer created successfully ✅",
-      newUser,
+      message: "Employer created successfully.",
+      employer,
     });
   } catch (error) {
     return res.status(500).json({
-      message: "Error creating employer ❌",
+      success: false,
+      message: "Error creating employer.",
       error: error.message,
     });
   }
 };
-
 const getAllEmployers = async (req, res) => {
   try {
-    const users = await User.find({ deleted_at: null });
+    const { search = "", page = 1, limit = 10 } = req.query;
+ console.log("search :", search)
+    const filter = {
+      deleted_at: null,
+    };
 
-    if (!users) {
-      return res.status(404).json({ message: "User not found" });
+    if (search) {
+      filter.$or = [
+        { name: { $regex: search, $options: "i" } },
+        { designation: { $regex: search, $options: "i" } },
+        { employerType: { $regex: search, $options: "i" } },
+      ];
     }
-    return res.status(200).json({ message: "All employess fetched ✅", users });
+
+    const total = await User.countDocuments(filter);
+
+    const employers = await User.find(filter)
+      .sort({ created_at: -1 })
+      .skip((page - 1) * limit)
+      .limit(Number(limit));
+
+    return res.status(200).json({
+      success: true,
+      total,
+      page: Number(page),
+      totalPages: Math.ceil(total / limit),
+      employers,
+    });
   } catch (error) {
-    return res
-      .status(500)
-      .json({ message: "Error fetching users ❌", error: error.message });
+    return res.status(500).json({
+      success: false,
+      message: "Error fetching employers.",
+      error: error.message,
+    });
   }
 };
 
@@ -155,115 +119,96 @@ const getSingleEmployer = async (req, res) => {
     const user = await User.findOne({ _id: userId, deleted_at: null });
 
     if (!user) {
-      return res.status(404).json({ message: "User not found ❌" });
+      return res.status(404).json({ message: "User not found" });
     }
 
-    return res
-      .status(200)
-      .json({ message: "Single employes fetched ✅", user });
+    return res.status(200).json({ message: "Single employes fetched", user });
   } catch (error) {
     return res
       .status(500)
-      .json({ message: "Error fetching user ❌", error: error.message });
+      .json({ message: "Error fetching user", error: error.message });
   }
 };
 
 const updateEmployer = async (req, res) => {
-  const { userId } = req.params;
-
   try {
+    const { userId } = req.params;
+
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        message: "Employer ID is required.",
+      });
+    }
+
     const {
-      empNo,
       name,
-      email,
-      mobile_number,
-      designation,
-      account_number,
-      permanent_address,
+      attendence,
+      overTime,
       salary,
-      date_of_birth,
-      date_of_joining,
-      status,
+      designation,
+      salaryType,
+      employerType,
+      currentSite,
+      teamName,
     } = req.body;
 
-    const statusNumber = Number(status);
+    const updateFields = {};
 
-    // // Optional file paths
-    // const fileUploadPath = req.files?.fileUpload?.[0]?.filename || undefined;
-    // const pdfUploadPath = req.files?.pdfUpload?.[0]?.filename || undefined;
+    if (name !== undefined) updateFields.name = name.trim();
+    if (attendence !== undefined) updateFields.attendence = attendence;
+    if (overTime !== undefined) updateFields.overTime = overTime;
+    if (salary !== undefined) updateFields.salary = salary;
+    if (designation !== undefined) updateFields.designation = designation;
+    if (salaryType !== undefined) updateFields.salaryType = salaryType;
+    if (employerType !== undefined) updateFields.employerType = employerType;
+    if (currentSite !== undefined) updateFields.currentSite = currentSite;
+    if (teamName !== undefined) updateFields.teamName = teamName;
 
-    // Build update object
-    const updateFields = {
-      empNo,
-      name,
-      email,
-      mobile_number,
-      designation,
-      account_number,
-      permanent_address,
-      salary,
-      date_of_birth,
-      date_of_joining,
-      status: statusNumber,
-      updated_at: new Date(),
-    };
+    if (Object.keys(updateFields).length === 0) {
+      return res.status(400).send(`No fields provided for update.
 
-    // if (fileUploadPath) {
-    //   updateFields.fileUpload = fileUploadPath;
-    // }
+      Example Request Body:
 
-    // if (pdfUploadPath) {
-    //   updateFields.pdfUpload = pdfUploadPath;
-    // }
-
-    // ✅ File buffer to Base64
-    if (req.files?.fileUpload?.[0]) {
-      const file = req.files.fileUpload[0];
-      console.log("file: ", file);
-
-      // updateFields.fileUpload = file.buffer.toString("base64"); // 👈 direct string
-      updateFields.fileUpload = file.buffer;
-      // updateFields.fileUpload = {
-      //   data: file.buffer.toString("base64"),
-      //   mimetype: file.mimetype,
-      //   originalname: file.originalname,
-      // };
+      name: Ali Raza
+      designation: qarigar
+      salary: 40000
+      employerType: partnerShip
+      attendence: present
+      overTime: 3
+      salaryType: monthly
+      currentSite: Site B
+      teamName: Team Alpha`);
     }
 
-    if (req.files?.pdfUpload?.[0]) {
-      const file = req.files.pdfUpload[0];
-      console.log("file: ", file);
-
-      // updateFields.pdfUpload = file.buffer.toString("base64"); // 👈 direct string
-      updateFields.pdfUpload = file.buffer; // 👈 direct string
-
-      // updateFields.pdfUpload = {
-      //   data: file.buffer.toString("base64"),
-      //   mimetype: file.mimetype,
-      //   originalname: file.originalname,
-      // };
-    }
-
-    const updatedUser = await User.findOneAndUpdate(
-      { _id: userId, deleted_at: null },
+    const employer = await User.findOneAndUpdate(
+      {
+        _id: userId,
+        deleted_at: null,
+      },
       updateFields,
-      { new: true }
+      {
+        new: true,
+        runValidators: true,
+      },
     );
 
-    if (!updatedUser) {
-      return res
-        .status(404)
-        .json({ message: "User not found or already deleted ❌" });
+    if (!employer) {
+      return res.status(404).json({
+        success: false,
+        message: "Employer not found.",
+      });
     }
 
     return res.status(200).json({
       success: true,
-      message: "Employer updated successfully ✅",
-      updatedUser,
+      message: "Employer updated successfully.",
+      employer,
     });
   } catch (error) {
     return res.status(500).json({
-      message: "Error updating employer ❌",
+      success: false,
+      message: "Error updating employer.",
       error: error.message,
     });
   }
@@ -276,22 +221,20 @@ const deleteEmployer = async (req, res) => {
     const deletedUser = await User.findOneAndUpdate(
       { _id: userId, deleted_at: null },
       { deleted_at: new Date() },
-      { new: true }
+      { new: true },
     );
 
     if (!deletedUser) {
       return res
         .status(404)
-        .json({ message: "User not found or already deleted ❌" });
+        .json({ message: "User not found or already deleted" });
     }
 
-    return res
-      .status(200)
-      .json({ message: "Employess deleted successfully ✅" });
+    return res.status(200).json({ message: "Employess deleted successfully" });
   } catch (error) {
     return res
       .status(500)
-      .json({ message: "Error deleting user ❌", error: error.message });
+      .json({ message: "Error deleting user", error: error.message });
   }
 };
 

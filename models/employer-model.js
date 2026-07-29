@@ -8,24 +8,15 @@ const userSchema = new mongoose.Schema(
       trim: true,
     },
 
-    status: {
+    attendence: {
+      type: String,
+      enum: ["present", "absent"],
+      default: "absent",
+    },
+
+    overTime: {
       type: Number,
-      default: 1,
-    },
-
-    mobile_number: {
-      type: String,
-      required: true,
-    },
-
-    designation: {
-      type: String,
-      required: true,
-    },
-
-    permanent_address: {
-      type: String,
-      required: true,
+      default: 0,
     },
 
     salary: {
@@ -33,21 +24,31 @@ const userSchema = new mongoose.Schema(
       required: true,
     },
 
-    fileUpload: {
-      type: Buffer,
-      // type: String,
-      default: null,
-      // required: true,
+    designation: {
+      type: String,
+      enum: ["mazdoor", "qarigar"],
+      required: true,
     },
 
-    created_at: {
-      type: Date,
-      default: () => new Date(),
+    salaryType: {
+      type: String,
+      enum: ["daily", "weekly", "monthly", "contract"],
+      default: "daily",
     },
 
-    updated_at: {
-      type: Date,
-      default: null,
+    employerType: {
+      type: String,
+      enum: ["owner", "partnerShip"],
+      required: true,
+    },
+
+    currentSite: {
+      type: String,
+    },
+
+    teamName: {
+      type: String,
+      default: "owner",
     },
 
     deleted_at: {
@@ -56,8 +57,11 @@ const userSchema = new mongoose.Schema(
     },
   },
   {
-    timestamps: false,
-  }
+    timestamps: {
+      createdAt: "created_at",
+      updatedAt: "updated_at",
+    },
+  },
 );
 
 const User = mongoose.model("Employer", userSchema);
