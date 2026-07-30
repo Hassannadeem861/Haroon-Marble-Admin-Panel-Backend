@@ -6,7 +6,9 @@ dotenv.config();
 
 const authMiddleware = async (req, res, next) => {
   
-  const token = req.cookies?.token
+  // const token = req.cookies?.token
+  const authHeader = req.headers?.authorization;
+  const token = authHeader?.startsWith("Bearer ") ? authHeader.split(" ")[1] : null;
   // console.log("token :", token)
  
   if (!token) {
