@@ -27,8 +27,7 @@ connectDB();
 
 // Step 1: CORS setup fix
 const allowedOrigins = [
-  "http://localhost:5173",
-  // "https://vercel-hrms-client-oz2i.vercel.app",
+  "https://haroon-marble-admin-panel-backend.vercel.app",
   // "http://localhost:5173",
 ];
 
