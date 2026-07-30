@@ -197,6 +197,8 @@ const getAllEmployers = async (req, res) => {
         { name: { $regex: search, $options: "i" } },
         { designation: { $regex: search, $options: "i" } },
         { workUnder: { $regex: search, $options: "i" } },
+        { attendence: { $regex: search, $options: "i" } },
+        { workStatus: { $regex: search, $options: "i" } },
       ];
     }
 
