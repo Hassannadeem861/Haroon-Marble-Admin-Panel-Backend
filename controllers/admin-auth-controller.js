@@ -231,7 +231,6 @@ const updateAdmin = async (req, res) => {
     const updatedUser = await User.findByIdAndUpdate(userId, req.body, {
       new: true,
     });
-    console.log("updatedUser: ", updatedUser);
 
     return res
       .status(200)

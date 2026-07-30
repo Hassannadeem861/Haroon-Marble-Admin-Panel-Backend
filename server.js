@@ -25,7 +25,7 @@ connectDB();
 //   credentials: true,
 // };
 
-// ✅ Step 1: CORS setup fix
+// Step 1: CORS setup fix
 const allowedOrigins = [
   "http://localhost:5173",
   // "https://vercel-hrms-client-oz2i.vercel.app",
@@ -35,10 +35,10 @@ const allowedOrigins = [
 app.use(
   cors({
     origin: function (origin, callback) {
-      // ✅ Agar koi origin nahi (Postman ya server request), to allow karo
+      // Agar koi origin nahi (Postman ya server request), to allow karo
       if (!origin) return callback(null, true);
 
-      // ✅ Agar origin allowed list me hai to allow karo
+      // Agar origin allowed list me hai to allow karo
       if (allowedOrigins.includes(origin)) {
         callback(null, true);
       } else {
@@ -49,10 +49,10 @@ app.use(
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     credentials: true,
     allowedHeaders: ["Content-Type", "Authorization"],
-  })
+  }),
 );
 
-// ✅ CORS preflight ke liye OPTIONS route handle karo
+// CORS preflight ke liye OPTIONS route handle karo
 // app.options("*", cors());
 
 // app.use(cors(corsOptions));
@@ -70,15 +70,11 @@ app.get("/", (req, res) => {
 
 import AdminAuthRouter from "./routes/admin-auth-route.js";
 import employerRouter from "./routes/employer-route.js";
-import salarySlipRouter from "./routes/salary-slip-route.js";
-import revenueRouter from "./routes/revenue-route.js";
-import officeLoanRouter from "./routes/office-loan-route.js";
+// import salarySlipRouter from "./routes/salary-slip-route.js";
 
 app.use("/api/v1", AdminAuthRouter);
 app.use("/api/v1", employerRouter);
-app.use("/api/v1", salarySlipRouter);
-app.use("/api/v1", revenueRouter);
-app.use("/api/v1", officeLoanRouter);
+// app.use("/api/v1", salarySlipRouter);
 
 // test route
 app.get("/", (req, res) => {

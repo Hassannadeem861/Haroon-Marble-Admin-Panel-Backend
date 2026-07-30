@@ -4,21 +4,24 @@ const createEmployer = async (req, res) => {
   try {
     const {
       name,
-      attendence,
+      description,
+      advanced,
       overTime,
       salary,
       designation,
-      salaryType,
-      employerType,
+      workUnder,
       currentSite,
-      teamName,
+      workStatus,
+      attendence,
+      // salaryType,
+      // teamName,
     } = req.body;
 
     const requiredFields = {
       name,
       salary,
       designation,
-      employerType,
+      workUnder,
     };
 
     const missingFields = Object.keys(requiredFields).filter(
@@ -38,27 +41,30 @@ const createEmployer = async (req, res) => {
       Example Request Body:
 
       name: Huzaifa
+      description: test description
       designation: qarigar
       salary: 1200
-      employerType: owner
+      workUnder: owner
       attendence: present
       overTime: 2
-      salaryType: daily
       currentSite: Site A
-      teamName: Owner
       `);
     }
 
     const employer = await User.create({
       name,
-      attendence,
+      description,
+      advanced,
       overTime,
       salary,
       designation,
-      salaryType,
-      employerType,
+      workUnder,
       currentSite,
-      teamName,
+      workUnder,
+      workStatus,
+      attendence,
+      // salaryType,
+      // teamName,
     });
 
     return res.status(201).json({
@@ -74,9 +80,114 @@ const createEmployer = async (req, res) => {
     });
   }
 };
+
+const getAllStats = async (req, res) => {
+  try {
+    const [dashboard] = await User.aggregate([
+      {
+        $match: {
+          deleted_at: null,
+        },
+      },
+      {
+        $group: {
+          _id: null,
+
+          totalWorkers: {
+            $sum: 1,
+          },
+
+          totalMazdoor: {
+            $sum: {
+              $cond: [{ $eq: ["$designation", "mazdoor"] }, 1, 0],
+            },
+          },
+
+          totalQarigar: {
+            $sum: {
+              $cond: [{ $eq: ["$designation", "qarigar"] }, 1, 0],
+            },
+          },
+
+          totalSalary: {
+            $sum: "$salary",
+          },
+
+          totalAdvance: {
+            $sum: "$advanced",
+          },
+
+          totalOverTime: {
+            $sum: "$overTime",
+          },
+
+          pendingWork: {
+            $sum: {
+              $cond: [{ $eq: ["$workStatus", "pending"] }, 1, 0],
+            },
+          },
+
+          inProgressWork: {
+            $sum: {
+              $cond: [{ $eq: ["$workStatus", "inprogress"] }, 1, 0],
+            },
+          },
+
+          completedWork: {
+            $sum: {
+              $cond: [{ $eq: ["$workStatus", "complete"] }, 1, 0],
+            },
+          },
+
+          presentWorkers: {
+            $sum: {
+              $cond: [{ $eq: ["$attendence", "present"] }, 1, 0],
+            },
+          },
+
+          absentWorkers: {
+            $sum: {
+              $cond: [{ $eq: ["$attendence", "absent"] }, 1, 0],
+            },
+          },
+        },
+      },
+      {
+        $project: {
+          _id: 0,
+        },
+      },
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      dashboard: dashboard || {
+        totalWorkers: 0,
+        totalMazdoor: 0,
+        totalQarigar: 0,
+        totalSalary: 0,
+        totalAdvance: 0,
+        totalOverTime: 0,
+        pendingWork: 0,
+        inProgressWork: 0,
+        completedWork: 0,
+        presentWorkers: 0,
+        absentWorkers: 0,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Dashboard data fetch failed.",
+      error: error.message,
+    });
+  }
+};
+
 const getAllEmployers = async (req, res) => {
   try {
     const { search = "", page = 1, limit = 10 } = req.query;
+
     const filter = {
       deleted_at: null,
     };
@@ -85,7 +196,7 @@ const getAllEmployers = async (req, res) => {
       filter.$or = [
         { name: { $regex: search, $options: "i" } },
         { designation: { $regex: search, $options: "i" } },
-        { employerType: { $regex: search, $options: "i" } },
+        { workUnder: { $regex: search, $options: "i" } },
       ];
     }
 
@@ -142,27 +253,34 @@ const updateEmployer = async (req, res) => {
 
     const {
       name,
-      attendence,
+      description,
+      advanced,
       overTime,
       salary,
       designation,
-      salaryType,
-      employerType,
+      workUnder,
       currentSite,
-      teamName,
+      workStatus,
+      attendence,
+      // salaryType,
+      // teamName,
     } = req.body;
 
     const updateFields = {};
 
     if (name !== undefined) updateFields.name = name.trim();
+    if (description !== undefined)
+      updateFields.description = description.trim();
+    if (advanced !== undefined) updateFields.advanced = advanced;
     if (attendence !== undefined) updateFields.attendence = attendence;
     if (overTime !== undefined) updateFields.overTime = overTime;
     if (salary !== undefined) updateFields.salary = salary;
     if (designation !== undefined) updateFields.designation = designation;
-    if (salaryType !== undefined) updateFields.salaryType = salaryType;
-    if (employerType !== undefined) updateFields.employerType = employerType;
+    // if (salaryType !== undefined) updateFields.salaryType = salaryType;
+    if (workUnder !== undefined) updateFields.workUnder = workUnder;
+    if (workStatus !== undefined) updateFields.workStatus = workStatus;
     if (currentSite !== undefined) updateFields.currentSite = currentSite;
-    if (teamName !== undefined) updateFields.teamName = teamName;
+    // if (teamName !== undefined) updateFields.teamName = teamName;
 
     if (Object.keys(updateFields).length === 0) {
       return res.status(400).send(`No fields provided for update.
@@ -170,14 +288,14 @@ const updateEmployer = async (req, res) => {
       Example Request Body:
 
       name: Ali Raza
+      description:Test description 
       designation: qarigar
       salary: 40000
-      employerType: partnerShip
+      workUnder: partnerShip
       attendence: present
       overTime: 3
-      salaryType: monthly
       currentSite: Site B
-      teamName: Team Alpha`);
+      `);
     }
 
     const employer = await User.findOneAndUpdate(
@@ -239,6 +357,7 @@ const deleteEmployer = async (req, res) => {
 
 export {
   createEmployer,
+  getAllStats,
   getAllEmployers,
   getSingleEmployer,
   updateEmployer,

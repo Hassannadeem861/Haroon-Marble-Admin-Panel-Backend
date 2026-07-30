@@ -5,16 +5,14 @@ const userSchema = new mongoose.Schema(
     name: {
       type: String,
       required: true,
-      trim: true,
+      index: true,
     },
 
-    attendence: {
+    description: {
       type: String,
-      enum: ["present", "absent"],
-      default: "absent",
     },
 
-    overTime: {
+    advanced: {
       type: Number,
       default: 0,
     },
@@ -24,32 +22,50 @@ const userSchema = new mongoose.Schema(
       required: true,
     },
 
+    overTime: {
+      type: Number,
+      default: 0,
+    },
+
     designation: {
       type: String,
       enum: ["mazdoor", "qarigar"],
-      required: true,
+      // required: true,
     },
 
-    salaryType: {
-      type: String,
-      enum: ["daily", "weekly", "monthly", "contract"],
-      default: "daily",
-    },
+    // salaryType: {
+    //   type: String,
+    //   enum: ["daily", "weekly", "monthly", "contract"],
+    //   default: "daily",
+    // },
 
-    employerType: {
+    workUnder: {
       type: String,
-      enum: ["owner", "partnerShip"],
+      enum: ["owner", "partnerShip", "client"],
       required: true,
+      // index: true,
     },
 
     currentSite: {
       type: String,
     },
 
-    teamName: {
+    workStatus: {
       type: String,
-      default: "owner",
+      enum: ["pending", "inprogress", "complete"],
+      default: "pending",
     },
+
+    attendence: {
+      type: String,
+      enum: ["present", "absent"],
+      default: "absent",
+    },
+
+    // teamName: {
+    //   type: String,
+    //   default: "owner",
+    // },
 
     deleted_at: {
       type: Date,
