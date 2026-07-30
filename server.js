@@ -27,13 +27,14 @@ connectDB();
 
 // Step 1: CORS setup fix
 const allowedOrigins = [
-  "https://haroon-marble-admin-panel-backend.vercel.app",
-  // "http://localhost:5173",
+  "https://haroon-marble-admin-panel.vercel.app",
+  // "http://localhost:5173/",
 ];
 
 app.use(
   cors({
     origin: function (origin, callback) {
+      console.log("origin: ", origin)
       // Agar koi origin nahi (Postman ya server request), to allow karo
       if (!origin) return callback(null, true);
 
