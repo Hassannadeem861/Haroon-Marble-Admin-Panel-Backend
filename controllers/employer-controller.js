@@ -202,6 +202,13 @@ const getAllEmployers = async (req, res) => {
       ];
     }
 
+    if (startDate && endDate) {
+      filter.created_at = {
+        $gte: new Date(startDate),
+        $lte: new Date(endDate),
+      };
+    }
+
     const total = await User.countDocuments(filter);
 
     const employers = await User.find(filter)
