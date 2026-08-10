@@ -27,8 +27,8 @@ connectDB();
 
 // Step 1: CORS setup fix
 const allowedOrigins = [
-  // process.env.FRONTEND_LIVE_URL,
-  process.env.FRONTEND_LOCAL_URL
+  process.env.FRONTEND_LIVE_URL,
+  // process.env.FRONTEND_LOCAL_URL
   // "https://haroon-marble-admin-panel.vercel.app",
   // "http://localhost:5173",
 ];
