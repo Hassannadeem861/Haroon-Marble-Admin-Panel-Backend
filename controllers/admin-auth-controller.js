@@ -114,7 +114,6 @@ const getAllAmins = async (req, res) => {
 const getSingleAdmin = async (req, res) => {
   try {
     const { id } = req.params;
-// console.log("id: ", req.params)
     if (!id) {
       return res.status(400).json({ message: "Id is required" });
     }
@@ -342,7 +341,6 @@ const resetPassword = async (req, res) => {
     }
 
     const decodedToken = jwt.verify(token, process.env.JWT_SECRET);
-    // console.log("Decoded token:", decodedToken);
 
     const user = await User.findOne({ email: decodedToken.email });
     if (!user) {
