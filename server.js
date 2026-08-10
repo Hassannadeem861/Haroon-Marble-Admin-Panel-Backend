@@ -32,11 +32,9 @@ const allowedOrigins = [
   // "https://haroon-marble-admin-panel.vercel.app",
   // "http://localhost:5173",
 ];
-console.log("allowedOrigins: ", allowedOrigins)
 app.use(
   cors({
     origin: function (origin, callback) {
-      console.log("origin: ", origin)
       // Agar koi origin nahi (Postman ya server request), to allow karo
       if (!origin) return callback(null, true);
 
