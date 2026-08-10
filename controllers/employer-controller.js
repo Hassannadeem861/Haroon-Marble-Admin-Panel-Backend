@@ -1,4 +1,5 @@
 import User from "../models/employer-model.js";
+import { parseDDMMYYYY, formatToDDMMYYYY } from "../utils/helperFun.js";
 
 const createEmployer = async (req, res) => {
   try {
@@ -13,6 +14,7 @@ const createEmployer = async (req, res) => {
       currentSite,
       workStatus,
       attendence,
+      entryDate,
       // salaryType,
       // teamName,
     } = req.body;
@@ -51,6 +53,20 @@ const createEmployer = async (req, res) => {
       `);
     }
 
+    // Agar user ne date bheji hai to parse karo, warna current date/time (automatic)
+    let finalEntryDate = new Date();
+
+    if (entryDate) {
+      const parsedDate = parseDDMMYYYY(entryDate);
+      if (!parsedDate) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid entryDate. Expected format: DD/MM/YYYY (e.g. 10/08/2026)",
+        });
+      }
+      finalEntryDate = parsedDate;
+    }
+
     const employer = await User.create({
       name,
       description,
@@ -63,6 +79,7 @@ const createEmployer = async (req, res) => {
       workUnder,
       workStatus,
       attendence,
+      entryDate: finalEntryDate,
       // salaryType,
       // teamName,
     });
@@ -186,7 +203,7 @@ const getAllStats = async (req, res) => {
 
 const getAllEmployers = async (req, res) => {
   try {
-    const { search = "", page = 1, limit = 10 } = req.query;
+    const { search = "", page = 1, limit = 10, startDate, endDate } = req.query;
 
     const filter = {
       deleted_at: null,
@@ -202,8 +219,9 @@ const getAllEmployers = async (req, res) => {
       ];
     }
 
+    // entryDate range filter (frontend se ISO string aayegi, DatePicker se)
     if (startDate && endDate) {
-      filter.created_at = {
+      filter.entryDate = {
         $gte: new Date(startDate),
         $lte: new Date(endDate),
       };
@@ -212,24 +230,31 @@ const getAllEmployers = async (req, res) => {
     const total = await User.countDocuments(filter);
 
     const employers = await User.find(filter)
-      .sort({ created_at: -1 })
+      .sort({ entryDate: -1 })
       .skip((page - 1) * limit)
       .limit(Number(limit));
+
+    // entryDate ko DD/MM/YYYY string mein convert karke bhejein
+    const formattedEmployers = employers.map((emp) => ({
+      ...emp.toObject(),
+      entryDate: formatToDDMMYYYY(emp.entryDate),
+    }));
+
 
     return res.status(200).json({
       success: true,
       total,
       page: Number(page),
       totalPages: Math.ceil(total / limit),
-      employers,
+      employers: formattedEmployers,
     });
-  } catch (error) {
-    return res.status(500).json({
-      success: false,
-      message: "Error fetching employers.",
-      error: error.message,
-    });
-  }
+} catch (error) {
+  return res.status(500).json({
+    success: false,
+    message: "Error fetching employers.",
+    error: error.message,
+  });
+}
 };
 
 const getSingleEmployer = async (req, res) => {
@@ -271,6 +296,7 @@ const updateEmployer = async (req, res) => {
       currentSite,
       workStatus,
       attendence,
+      entryDate,
       // salaryType,
       // teamName,
     } = req.body;
@@ -307,6 +333,18 @@ const updateEmployer = async (req, res) => {
       `);
     }
 
+    // entryDate handle karein
+    if (entryDate !== undefined) {
+      const parsedDate = parseDDMMYYYY(entryDate);
+      if (!parsedDate) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid entryDate. Expected format: DD/MM/YYYY (e.g. 10/08/2026)",
+        });
+      }
+      updateFields.entryDate = parsedDate;
+    }
+
     const employer = await User.findOneAndUpdate(
       {
         _id: userId,
@@ -329,7 +367,11 @@ const updateEmployer = async (req, res) => {
     return res.status(200).json({
       success: true,
       message: "Employer updated successfully.",
-      employer,
+      employer: {
+        ...employer.toObject(),
+        entryDate: formatToDDMMYYYY(employer.entryDate),
+
+      },
     });
   } catch (error) {
     return res.status(500).json({
