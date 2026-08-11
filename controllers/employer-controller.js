@@ -1,10 +1,11 @@
 import User from "../models/employer-model.js";
-import { parseDDMMYYYY, formatToDDMMYYYY } from "../utils/helperFun.js";
+import { parseDDMMYYYY, formatToDDMMYYYY, generateWorkerId} from "../utils/helperFun.js";
 
 const createEmployer = async (req, res) => {
   try {
     const {
       name,
+      workerId,
       description,
       advanced,
       overTime,
@@ -53,6 +54,9 @@ const createEmployer = async (req, res) => {
       `);
     }
 
+    const finalWorkerId = workerId || generateWorkerId(name);
+
+
     // Agar user ne date bheji hai to parse karo, warna current date/time (automatic)
     let finalEntryDate = new Date();
 
@@ -69,6 +73,7 @@ const createEmployer = async (req, res) => {
 
     const employer = await User.create({
       name,
+      workerId: finalWorkerId,
       description,
       advanced,
       overTime,
@@ -248,13 +253,13 @@ const getAllEmployers = async (req, res) => {
       totalPages: Math.ceil(total / limit),
       employers: formattedEmployers,
     });
-} catch (error) {
-  return res.status(500).json({
-    success: false,
-    message: "Error fetching employers.",
-    error: error.message,
-  });
-}
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Error fetching employers.",
+      error: error.message,
+    });
+  }
 };
 
 const getSingleEmployer = async (req, res) => {
@@ -406,11 +411,109 @@ const deleteEmployer = async (req, res) => {
   }
 };
 
+// Dropdown ke liye — distinct workers ki list (naam + unka workerId)
+const getWorkersList = async (req, res) => {
+  try {
+    const workers = await User.aggregate([
+      { $match: { deleted_at: null } },
+      { $sort: { created_at: -1 } },
+      {
+        $group: {
+          _id: "$workerId",
+          name: { $first: "$name" },
+          designation: { $first: "$designation" },
+        },
+      },
+      { $project: { _id: 0, workerId: "$_id", name: 1, designation: 1 } },
+      { $sort: { name: 1 } },
+    ]);
+    return res.status(200).json({ success: true, workers });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch workers list.",
+      error: error.message,
+    });
+  }
+};
+
+// Salary Slip — worker + date range se sab entries aggregate
+const getWorkerSalarySlip = async (req, res) => {
+  try {
+    const { workerId } = req.params;
+    const { startDate, endDate } = req.query;
+
+    if (!workerId || !startDate || !endDate) {
+      return res.status(400).json({
+        success: false,
+        message: "workerId, startDate and endDate are required.",
+      });
+    }
+
+    const entries = await User.find({
+      workerId,
+      deleted_at: null,
+      entryDate: { $gte: new Date(startDate), $lte: new Date(endDate) },
+    }).sort({ entryDate: 1 });
+
+    const OVERTIME_RATE = 500; // Rs per hour
+
+    let baseSalary = 0;
+    let totalOvertimeHours = 0;
+    let totalAdvance = 0;
+    let presentDays = 0;
+    let absentDays = 0;
+
+    entries.forEach((entry) => {
+      if (entry.attendence === "present") {
+        baseSalary += entry.salary || 0;
+        presentDays += 1;
+      } else {
+        absentDays += 1;
+      }
+      totalOvertimeHours += entry.overTime || 0;
+      totalAdvance += entry.advanced || 0;
+    });
+
+    const overtimeAmount = totalOvertimeHours * OVERTIME_RATE;
+    const grossAmount = baseSalary + overtimeAmount;
+    const netAmount = grossAmount - totalAdvance;
+
+    return res.status(200).json({
+      success: true,
+      slip: {
+        workerId,
+        name: entries[0]?.name || null,
+        startDate,
+        endDate,
+        presentDays,
+        absentDays,
+        baseSalary,
+        totalOvertimeHours,
+        overtimeRate: OVERTIME_RATE,
+        overtimeAmount,
+        totalAdvance,
+        grossAmount,
+        netAmount,
+        entries,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Failed to generate salary slip.",
+      error: error.message,
+    });
+  }
+};
+
 export {
   createEmployer,
   getAllStats,
   getAllEmployers,
   getSingleEmployer,
+  getWorkerSalarySlip,
+  getWorkersList,
   updateEmployer,
   deleteEmployer,
 };
