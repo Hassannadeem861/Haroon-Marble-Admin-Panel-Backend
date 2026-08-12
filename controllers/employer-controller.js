@@ -72,7 +72,7 @@ const createEmployer = async (req, res) => {
     }
 
     const employer = await User.create({
-      name,
+      name: name.trim(),
       workerId: finalWorkerId,
       description,
       advanced,

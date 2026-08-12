@@ -70,10 +70,12 @@ app.get("/", (req, res) => {
 
 import AdminAuthRouter from "./routes/admin-auth-route.js";
 import employerRouter from "./routes/employer-route.js";
+import factoryWorkRoutes from "./routes/factory-work-routes.js";
 // import salarySlipRouter from "./routes/salary-slip-route.js";
 
 app.use("/api/v1", AdminAuthRouter);
 app.use("/api/v1", employerRouter);
+app.use("/api/v1/factory-work", factoryWorkRoutes);
 // app.use("/api/v1", salarySlipRouter);
 
 // test route
