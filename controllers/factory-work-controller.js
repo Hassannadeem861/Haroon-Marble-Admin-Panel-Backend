@@ -154,7 +154,20 @@ const updateFactoryWork = async (req, res) => {
       expectedCompletionDate,
       notes,
       status,
+      advanceAmount,
+      advanceDate
     } = req.body;
+
+    const existingWork = await FactoryWork.findOne({ _id: workId, deleted_at: null });
+    console.log("existingWork: ", existingWork);
+
+    if (!existingWork) {
+      return res.status(404).json({
+        success: false,
+        message: "Factory work not found.",
+      });
+    }
+
 
     const updateFields = {};
     if (factoryName !== undefined) updateFields.factoryName = factoryName;
@@ -167,6 +180,39 @@ const updateFactoryWork = async (req, res) => {
     if (notes !== undefined) updateFields.notes = notes;
     if (status !== undefined) updateFields.status = status;
 
+
+    // ✅ Advance payment update karo
+    if (advanceAmount !== undefined) {
+      const advancePayment = existingWork.payments?.find((p) => p.type === "advance");
+
+      if (advancePayment) {
+        // ✅ Update existing advance
+        await FactoryWork.updateOne(
+          { _id: workId, "payments._id": advancePayment._id },
+          {
+            $set: {
+              "payments.$.amount": advanceAmount,
+              "payments.$.date": advanceDate ? new Date(advanceDate) : new Date(),
+            }
+          }
+        );
+      } else {
+        // ✅ Add new advance
+        await FactoryWork.updateOne(
+          { _id: workId },
+          {
+            $push: {
+              payments: {
+                amount: advanceAmount,
+                type: "advance",
+                date: advanceDate ? new Date(advanceDate) : new Date(),
+              }
+            }
+          }
+        );
+      }
+    }
+
     if (Object.keys(updateFields).length === 0) {
       return res.status(400).json({
         success: false,
@@ -174,11 +220,17 @@ const updateFactoryWork = async (req, res) => {
       });
     }
 
-    const factoryWork = await FactoryWork.findOneAndUpdate(
-      { _id: workId, deleted_at: null },
-      updateFields,
-      { new: true, runValidators: true },
-    );
+    // ✅ Agar kuch aur fields update karni hain
+    if (Object.keys(updateFields).length > 0) {
+      await FactoryWork.findOneAndUpdate(
+        { _id: workId, deleted_at: null },
+        updateFields,
+        { new: true, runValidators: true }
+      );
+    }
+
+    // ✅ Final result fetch karo
+    const factoryWork = await FactoryWork.findOne({ _id: workId, deleted_at: null });
 
     if (!factoryWork) {
       return res.status(404).json({
@@ -265,6 +317,14 @@ const updateMaterialMovement = async (req, res) => {
       });
     }
 
+    const allowedVehicles = ["Suzuki", "Bike", "Car", "High Roof Van", "Auto rickshaw"];
+    if (vehicleUsed && !allowedVehicles.includes(vehicleUsed)) {
+      return res.status(400).json({
+        success: false,
+        message: `vehicleUsed sirf yeh ho sakta hai: ${allowedVehicles.join(", ")}`,
+      });
+    }
+
     const factoryWork = await FactoryWork.findOneAndUpdate(
       { _id: workId, deleted_at: null },
       {
@@ -273,7 +333,7 @@ const updateMaterialMovement = async (req, res) => {
         "materialMovement.notes": notes,
         status: "on_the_way", // material nikal gaya -> automatically "on the way"
       },
-      { new: true, runValidators: true },
+      { new: true, runValidators: true }, //runValidators automatically enum check karega
     );
 
     if (!factoryWork) {

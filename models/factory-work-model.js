@@ -47,7 +47,7 @@ const factoryWorkSchema = new mongoose.Schema(
   {
     factoryName: { type: String, required: true },
     workMaterialName: { type: String, required: true },
-    quantity: { type: String },          // "1000 sq.ft" — free text, units vary
+    quantity: {  type: String },         // "1000 sq.ft" — free text, units vary
     totalAmount: { type: Number, required: true },
     expectedCompletionDate: { type: Date },
     notes: { type: String },
@@ -65,7 +65,7 @@ const factoryWorkSchema = new mongoose.Schema(
 
     materialMovement: {
       leftFactoryDate: { type: Date },
-      vehicleUsed: { type: String },
+      vehicleUsed: { type: String, enum:["Suzuki", "Bike", "Car", "High Roof Van", "Auto rickshaw"] },
       notes: { type: String },
     },
 
