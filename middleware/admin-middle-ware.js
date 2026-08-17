@@ -5,27 +5,30 @@ import dotenv from "dotenv";
 dotenv.config();
 
 const authMiddleware = async (req, res, next) => {
-  
+
   // const token = req.cookies?.token
   const authHeader = req.headers?.authorization;
   const token = authHeader?.startsWith("Bearer ") ? authHeader.split(" ")[1] : null;
- 
+
   if (!token) {
-    return res.status(200).json({ message: "Token not provided" });
+    return res.status(401).json({
+      success: false,
+      message: "Authentication required.",
+    });
   }
 
   try {
 
     const verifyToken = jwt.verify(token, process.env.JWT_SECRET);
 
-  //  const admin = await adminModel.findById(verifyToken.adminId);
-   
-  //  if (!admin) {
-  //     return res.status(200).json({ message: "Admin not found" });
-  //   }
+    //  const admin = await adminModel.findById(verifyToken.adminId);
+
+    //  if (!admin) {
+    //     return res.status(200).json({ message: "Admin not found" });
+    //   }
 
     req.admin = verifyToken;
-    
+
     next();
   } catch (error) {
     return res.status(500).json({ message: "Invalid token", error: error.message });
@@ -35,9 +38,9 @@ const authMiddleware = async (req, res, next) => {
 
 const adminMiddleWare = async (req, res, next) => {
   try {
-   
+
     const admin = await adminModel.findById(req?.admin?._id);
-   
+
     if (!admin) {
       return res.status(401).json({ message: "Admin not found" });
     }

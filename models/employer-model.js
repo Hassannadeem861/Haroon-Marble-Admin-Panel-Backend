@@ -1,86 +1,62 @@
 import mongoose from "mongoose";
 
-const userSchema = new mongoose.Schema(
+/**
+ * Employer / Worker MASTER profile.
+ * Ek worker ka sirf EK record hota hai. Daily attendance/advance/overtime/
+ * site/workStatus is model mein NAHI aati — wo sab DailyWork model mein hai.
+ */
+const employerSchema = new mongoose.Schema(
   {
     name: {
       type: String,
       required: true,
+      trim: true,
       index: true,
     },
 
     workerId: {
       type: String,
       required: true,
+      unique: true,
       index: true,
-    },
-
-    description: {
-      type: String,
-    },
-
-    advanced: {
-      type: Number,
-      default: 0,
-    },
-
-    salary: {
-      type: Number,
-      required: true,
-    },
-
-    overTime: {
-      type: Number,
-      default: 0,
     },
 
     designation: {
       type: String,
       enum: ["mazdoor", "qarigar"],
-      // required: true,
-    },
-
-    // salaryType: {
-    //   type: String,
-    //   enum: ["daily", "weekly", "monthly", "contract"],
-    //   default: "daily",
-    // },
-
-    workUnder: {
-      type: String,
-      enum: ["owner", "partnerShip", "client"],
       required: true,
-      // index: true,
     },
 
-    currentSite: {
-      type: String,
-    },
-
-    workStatus: {
-      type: String,
-      enum: ["pending", "inprogress", "complete"],
-      default: "pending",
-    },
-
-    attendence: {
-      type: String,
-      enum: ["present", "absent"],
-      default: "absent",
+    // Normal/base daily rate. DailyWork apni salary khud store karega,
+    // taake future rate-change se purani history na badle.
+    salary: {
+      type: Number,
+      required: true,
+      min: [0, "Salary cannot be negative."],
     },
 
     entryDate: {
       type: Date,
-      default: Date.now
+      default: Date.now,
     },
 
-    // teamName: {
-    //   type: String,
-    //   default: "owner",
-    // },
+    description: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+
+    status: {
+      type: String,
+      enum: ["active", "inactive"],
+      default: "active",
+      index: true,
+    },
 
     deleted_at: {
       type: Date,
       default: null,
+      index: true,
     },
   },
   {
@@ -91,5 +67,7 @@ const userSchema = new mongoose.Schema(
   },
 );
 
-const User = mongoose.model("Employer", userSchema);
-export default User;
+employerSchema.index({ name: 1, status: 1 });
+
+const Employer = mongoose.model("Employer", employerSchema);
+export default Employer;

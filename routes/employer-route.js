@@ -1,25 +1,39 @@
 import express from "express";
 import {
   createEmployer,
-  getAllStats,
   getAllEmployers,
   getSingleEmployer,
   updateEmployer,
   deleteEmployer,
-  getWorkerSalarySlip,
-  getWorkersList
+  getWorkersList,
+  getEmployerSalarySlip,
 } from "../controllers/employer-controller.js";
-import { authMiddleware } from "../middleware/admin-middle-ware.js";
 
 const router = express.Router();
 
-router.post("/create-employer", authMiddleware, createEmployer);
-router.get("/dashboard", authMiddleware, getAllStats);
-router.get("/get-all-employers", authMiddleware, getAllEmployers);
-router.get("/get-single-employer/:userId", authMiddleware, getSingleEmployer);
-router.get("/get-workers-list", authMiddleware, getWorkersList);          
-router.get("/salary-slip/:workerId", authMiddleware, getWorkerSalarySlip); 
-router.put("/update-employer/:userId", authMiddleware, updateEmployer);
-router.delete("/delete-employer/:userId", authMiddleware, deleteEmployer);
+// NOTE: route order matters — a static path like "/workers-list" must be
+// declared BEFORE the "/:employerId" dynamic routes, otherwise Express will
+// treat "workers-list" as an :employerId value and 404/500 in getSingleEmployer.
+
+// GET /workers-list — active workers for the DailyWork form dropdown
+router.get("/workers-list", getWorkersList);
+
+// GET /get-all-employers — list, search, paginate
+router.get("/get-all-employers", getAllEmployers);
+
+// POST /create-employer
+router.post("/create-employer", createEmployer);
+
+// GET /get-single-employer/:employerId — profile + daily history + summary
+router.get("/get-single-employer/:employerId", getSingleEmployer);
+
+// PUT /update-employer/:employerId — master profile only
+router.put("/update-employer/:employerId", updateEmployer);
+
+// DELETE /delete-employer/:employerId — soft delete
+router.delete("/delete-employer/:employerId", deleteEmployer);
+
+// GET /salary-slip/:employerId?startDate=&endDate=
+router.get("/salary-slip/:employerId", getEmployerSalarySlip);
 
 export default router;

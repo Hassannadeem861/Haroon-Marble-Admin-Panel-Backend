@@ -69,7 +69,7 @@ export const calculateSalary = ({
   };
 };
 
-const round2 = (n) => Math.round(n * 100) / 100;
+export const round2 = (n) => Math.round(n * 100) / 100;
 
 
 // naam se slug + random suffix — e.g. "ali-khan-a1b2c3"

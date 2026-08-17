@@ -27,8 +27,8 @@ connectDB();
 
 // Step 1: CORS setup fix
 const allowedOrigins = [
-  process.env.FRONTEND_LIVE_URL,
-  // process.env.FRONTEND_LOCAL_URL
+  // process.env.FRONTEND_LIVE_URL,
+  process.env.FRONTEND_LOCAL_URL
   // "https://haroon-marble-admin-panel.vercel.app",
   // "http://localhost:5173",
 ];
@@ -71,10 +71,12 @@ app.get("/", (req, res) => {
 import AdminAuthRouter from "./routes/admin-auth-route.js";
 import employerRouter from "./routes/employer-route.js";
 import factoryWorkRoutes from "./routes/factory-work-routes.js";
+import DailyWorkRoutes from "./routes/daliy-work-routes.js";
 // import salarySlipRouter from "./routes/salary-slip-route.js";
 
 app.use("/api/v1", AdminAuthRouter);
 app.use("/api/v1", employerRouter);
+app.use("/api/v1", DailyWorkRoutes);
 app.use("/api/v1/factory-work", factoryWorkRoutes);
 // app.use("/api/v1", salarySlipRouter);
 
