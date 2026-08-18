@@ -123,7 +123,7 @@ const getAllDailyWork = async (req, res) => {
 
     const total = await DailyWork.countDocuments(filter);
     const entries = await DailyWork.find(filter)
-      .populate("employerId", "name workerId designation")
+      .populate("employerId", "name designation")
       .sort({ entryDate: -1 })
       .skip((page - 1) * limit)
       .limit(Number(limit))
@@ -150,7 +150,7 @@ const getSingleDailyWork = async (req, res) => {
     const { id } = req.params;
     const entry = await DailyWork.findOne({ _id: id, deleted_at: null }).populate(
       "employerId",
-      "name workerId designation",
+      "name designation",
     );
     if (!entry) {
       return res.status(404).json({ success: false, message: "Daily work record not found." });

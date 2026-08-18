@@ -1,47 +1,45 @@
 /**
- * FRESH MIGRATION
+ * SAFE FRESH MIGRATION
  * ---------------------------------------------------------------
  * OLD:
- *   employers_old_backup
+ *   employers1232344354554
  *
  * NEW:
  *   employers
  *   dailyworks
  *
+ * Worker identification:
+ *   ONLY normalized name
+ *
  * IMPORTANT:
- * - Worker identity is based ONLY on normalized name.
- * - generateWorkerId() is NOT used.
- * - Old workerId is completely ignored.
- * - employers_old_backup is READ ONLY.
- *
- * Example:
- *   "Zahid"
- *   " Zahid "
- *   "ZAHID"
- *   "zahid  "
- *
- * all become:
- *   workerId = "zahid"
- *
- * One normalized name = ONE Employer document.
+ *   - Old collection is READ ONLY
+ *   - Existing employers/dailyworks are dropped and recreated
+ *   - Same normalized name = ONE Employer
+ *   - Every old record = ONE DailyWork
+ *   - If ANY record of a worker is active, Employer is ACTIVE
+ *   - Deleted DailyWork history is preserved
  */
 
 import mongoose from "mongoose";
 import dotenv from "dotenv";
+import { calculateOvertimeAmount } from "../utils/salary-helper-fun.js";
+import { round2 } from "../utils/helperFun.js";
 
 dotenv.config();
 
-// ---------------------------------------------------------------
-// COLLECTION NAMES
-// ---------------------------------------------------------------
+// ===============================================================
+// COLLECTIONS
+// ===============================================================
 
 const OLD_COLLECTION = "employers1232344354554";
+
 const NEW_EMPLOYERS_COLLECTION = "employers";
+
 const NEW_DAILYWORK_COLLECTION = "dailyworks";
 
-// ---------------------------------------------------------------
+// ===============================================================
 // NORMALIZE NAME
-// ---------------------------------------------------------------
+// ===============================================================
 
 const normalizeName = (name) => {
   return String(name || "")
@@ -50,20 +48,16 @@ const normalizeName = (name) => {
     .toLowerCase();
 };
 
-// ---------------------------------------------------------------
+// ===============================================================
 // HELPERS
-// ---------------------------------------------------------------
+// ===============================================================
 
-const toDate = (value) => {
-  if (!value) return new Date();
-
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return new Date();
+const cleanString = (value) => {
+  if (value === null || value === undefined) {
+    return "";
   }
 
-  return date;
+  return String(value).trim();
 };
 
 const toNumber = (value, defaultValue = 0) => {
@@ -76,31 +70,52 @@ const toNumber = (value, defaultValue = 0) => {
   return number;
 };
 
-const cleanString = (value) => {
-  if (value === null || value === undefined) {
-    return "";
+const toDate = (value) => {
+  if (!value) {
+    return new Date();
   }
 
-  return String(value).trim();
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return new Date();
+  }
+
+  return date;
 };
 
-// ---------------------------------------------------------------
+// ===============================================================
+// CHECK ACTIVE RECORD
+// ===============================================================
+
+const isActiveRecord = (doc) => {
+  return (
+    doc.deleted_at === null ||
+    doc.deleted_at === undefined
+  );
+};
+
+// ===============================================================
 // MAIN
-// ---------------------------------------------------------------
+// ===============================================================
 
 const run = async () => {
   try {
     console.log("==============================================");
-    console.log("   FRESH EMPLOYER / DAILY WORK MIGRATION");
+    console.log("   SAFE EMPLOYER / DAILY WORK MIGRATION");
     console.log("==============================================");
+
+    // ===========================================================
+    // CHECK ENV
+    // ===========================================================
 
     if (!process.env.MONGODB_URI) {
       throw new Error("MONGODB_URI is missing in .env");
     }
 
-    // -----------------------------------------------------------
+    // ===========================================================
     // CONNECT
-    // -----------------------------------------------------------
+    // ===========================================================
 
     await mongoose.connect(process.env.MONGODB_URI);
 
@@ -108,17 +123,19 @@ const run = async () => {
 
     console.log("\nMongoDB connected.");
 
-    // -----------------------------------------------------------
-    // CHECK OLD BACKUP
-    // -----------------------------------------------------------
+    // ===========================================================
+    // CHECK OLD COLLECTION
+    // ===========================================================
 
     const oldExists = await db
-      .listCollections({ name: OLD_COLLECTION })
+      .listCollections({
+        name: OLD_COLLECTION,
+      })
       .hasNext();
 
     if (!oldExists) {
       throw new Error(
-        `"${OLD_COLLECTION}" collection does not exist. Migration stopped.`,
+        `"${OLD_COLLECTION}" collection does not exist.`,
       );
     }
 
@@ -126,55 +143,74 @@ const run = async () => {
       .collection(OLD_COLLECTION)
       .countDocuments();
 
-    console.log(`\nOld backup records: ${oldCount}`);
+    console.log(`\nOld records: ${oldCount}`);
 
     if (oldCount === 0) {
       throw new Error(
-        `"${OLD_COLLECTION}" is empty. Migration stopped for safety.`,
+        `"${OLD_COLLECTION}" is empty. Migration stopped.`,
       );
     }
 
-    // -----------------------------------------------------------
+    // ===========================================================
     // DROP NEW COLLECTIONS
-    // -----------------------------------------------------------
+    // ===========================================================
 
-    console.log("\nPreparing new collections...");
+    console.log("\nPreparing migration collections...");
 
     const employersExists = await db
-      .listCollections({ name: NEW_EMPLOYERS_COLLECTION })
+      .listCollections({
+        name: NEW_EMPLOYERS_COLLECTION,
+      })
       .hasNext();
 
     if (employersExists) {
-      await db.collection(NEW_EMPLOYERS_COLLECTION).drop();
-      console.log(`Dropped "${NEW_EMPLOYERS_COLLECTION}".`);
+      await db
+        .collection(NEW_EMPLOYERS_COLLECTION)
+        .drop();
+
+      console.log(
+        `Dropped "${NEW_EMPLOYERS_COLLECTION}".`,
+      );
     }
 
     const dailyWorksExists = await db
-      .listCollections({ name: NEW_DAILYWORK_COLLECTION })
+      .listCollections({
+        name: NEW_DAILYWORK_COLLECTION,
+      })
       .hasNext();
 
     if (dailyWorksExists) {
-      await db.collection(NEW_DAILYWORK_COLLECTION).drop();
-      console.log(`Dropped "${NEW_DAILYWORK_COLLECTION}".`);
+      await db
+        .collection(NEW_DAILYWORK_COLLECTION)
+        .drop();
+
+      console.log(
+        `Dropped "${NEW_DAILYWORK_COLLECTION}".`,
+      );
     }
 
-    // -----------------------------------------------------------
+    // ===========================================================
     // READ OLD DATA
-    // -----------------------------------------------------------
+    // ===========================================================
 
-    console.log("\nReading old backup...");
+    console.log("\nReading old data...");
 
     const oldDocs = await db
       .collection(OLD_COLLECTION)
       .find({})
-      .sort({ entryDate: 1, created_at: 1 })
+      .sort({
+        entryDate: 1,
+        created_at: 1,
+      })
       .toArray();
 
-    console.log(`Loaded ${oldDocs.length} old records.`);
+    console.log(
+      `Loaded ${oldDocs.length} records.`,
+    );
 
-    // -----------------------------------------------------------
+    // ===========================================================
     // GROUP BY NORMALIZED NAME
-    // -----------------------------------------------------------
+    // ===========================================================
 
     const groups = new Map();
 
@@ -182,11 +218,12 @@ const run = async () => {
 
     for (const doc of oldDocs) {
       const originalName = cleanString(doc.name);
-      const normalizedName = normalizeName(originalName);
+
+      const normalizedName =
+        normalizeName(originalName);
 
       if (!normalizedName) {
         invalidRecords.push(doc._id);
-
         continue;
       }
 
@@ -194,70 +231,137 @@ const run = async () => {
         groups.set(normalizedName, []);
       }
 
-      groups.get(normalizedName).push(doc);
+      groups
+        .get(normalizedName)
+        .push(doc);
     }
 
-    console.log(`\nUnique workers by normalized name: ${groups.size}`);
+    console.log(
+      `\nUnique workers: ${groups.size}`,
+    );
+
+    // ===========================================================
+    // STOP IF EMPTY NAMES FOUND
+    // ===========================================================
 
     if (invalidRecords.length > 0) {
       console.log(
-        `WARNING: ${invalidRecords.length} records have empty names.`,
+        `\nWARNING: ${invalidRecords.length} records have empty names.`,
       );
 
-      console.log("Migration stopped. Fix those records first.");
+      console.log(
+        "Migration stopped for safety.",
+      );
 
       console.log(
         "Invalid IDs:",
-        invalidRecords.map((id) => id.toString()).join(", "),
+        invalidRecords
+          .map((id) => id.toString())
+          .join(", "),
       );
 
-      throw new Error("Records with empty worker names found.");
+      throw new Error(
+        "Empty worker names found.",
+      );
     }
 
-    // -----------------------------------------------------------
+    // ===========================================================
     // CREATE EMPLOYERS
-    // -----------------------------------------------------------
+    // ===========================================================
 
     const employerDocuments = [];
+
     const employerIdMap = new Map();
 
-    for (const [normalizedName, docs] of groups.entries()) {
+    for (const [
+      normalizedName,
+      docs,
+    ] of groups.entries()) {
       /*
-       * docs are already sorted by entryDate ASC.
+       * IMPORTANT LOGIC:
        *
-       * Latest record is used for the worker's current/master
-       * profile values such as salary and designation.
+       * If ANY record is active:
+       *   Employer = active
+       *
+       * Active record:
+       *   deleted_at = null / undefined
+       *
+       * If no active record exists:
+       *   Employer = inactive
        */
 
-      const latestDoc = docs[docs.length - 1];
+      const activeDocs = docs.filter(
+        isActiveRecord,
+      );
+
+      const hasActiveRecord =
+        activeDocs.length > 0;
+
+      /*
+       * For Employer data:
+       *
+       * If active record exists:
+       *   Use latest ACTIVE record
+       *
+       * Otherwise:
+       *   Use latest record
+       */
+
+      const sourceDocs = hasActiveRecord
+        ? activeDocs
+        : docs;
+
+      const sourceDoc =
+        sourceDocs[sourceDocs.length - 1];
 
       const displayName =
-        cleanString(latestDoc.name) ||
+        cleanString(sourceDoc.name) ||
         cleanString(docs[0].name) ||
         normalizedName;
 
-      const employerId = new mongoose.Types.ObjectId();
+      // New MongoDB Employer _id
+      const employerId =
+        new mongoose.Types.ObjectId();
 
-      employerIdMap.set(normalizedName, employerId);
+      // Map normalized name -> Employer _id
+      employerIdMap.set(
+        normalizedName,
+        employerId,
+      );
 
       const employerDocument = {
         _id: employerId,
 
-        // Original/display name
+        // =====================================================
+        // BASIC INFO
+        // =====================================================
+
         name: displayName,
 
-        // IMPORTANT:
-        // Name-based worker ID.
-        workerId: normalizedName,
+        // No workerId
 
-        // Latest profile information
+        // =====================================================
+        // DESIGNATION
+        // =====================================================
+
         designation:
-          latestDoc.designation === "mazdoor" ||
-          latestDoc.designation === "qarigar"
-            ? latestDoc.designation
+          sourceDoc.designation === "mazdoor" ||
+          sourceDoc.designation === "qarigar"
+            ? sourceDoc.designation
             : "mazdoor",
 
-        salary: toNumber(latestDoc.salary, 0),
+        // =====================================================
+        // SALARY
+        // =====================================================
+
+        salary: toNumber(
+          sourceDoc.salary,
+          0,
+        ),
+
+        // =====================================================
+        // FIRST ENTRY DATE
+        // =====================================================
 
         entryDate: toDate(
           docs[0].entryDate ||
@@ -265,17 +369,36 @@ const run = async () => {
             new Date(),
         ),
 
-        description: cleanString(latestDoc.description),
+        // =====================================================
+        // DESCRIPTION
+        // =====================================================
 
-        status:
-          latestDoc.deleted_at !== null &&
-          latestDoc.deleted_at !== undefined
-            ? "inactive"
-            : "active",
+        description:
+          cleanString(
+            sourceDoc.description,
+          ),
 
-        deleted_at: latestDoc.deleted_at
-          ? toDate(latestDoc.deleted_at)
-          : null,
+        // =====================================================
+        // STATUS
+        // =====================================================
+
+        status: hasActiveRecord
+          ? "active"
+          : "inactive",
+
+        // =====================================================
+        // DELETED AT
+        // =====================================================
+
+        deleted_at: hasActiveRecord
+          ? null
+          : toDate(
+              sourceDoc.deleted_at,
+            ),
+
+        // =====================================================
+        // CREATED AT
+        // =====================================================
 
         created_at: toDate(
           docs[0].created_at ||
@@ -283,51 +406,81 @@ const run = async () => {
             new Date(),
         ),
 
+        // =====================================================
+        // UPDATED AT
+        // =====================================================
+
         updated_at: toDate(
-          latestDoc.updated_at ||
-            latestDoc.entryDate ||
+          sourceDoc.updated_at ||
+            sourceDoc.entryDate ||
             new Date(),
         ),
       };
 
-      employerDocuments.push(employerDocument);
+      employerDocuments.push(
+        employerDocument,
+      );
+
+      console.log(
+        `Employer: ${displayName} | ` +
+        `Records: ${docs.length} | ` +
+        `Active Records: ${activeDocs.length} | ` +
+        `Status: ${employerDocument.status}`,
+      );
     }
 
-    // -----------------------------------------------------------
+    // ===========================================================
     // INSERT EMPLOYERS
-    // -----------------------------------------------------------
+    // ===========================================================
 
     if (employerDocuments.length > 0) {
       await db
-        .collection(NEW_EMPLOYERS_COLLECTION)
-        .insertMany(employerDocuments);
+        .collection(
+          NEW_EMPLOYERS_COLLECTION,
+        )
+        .insertMany(
+          employerDocuments,
+        );
     }
 
     console.log(
-      `\nCreated ${employerDocuments.length} Employer records.`,
+      `\nCreated ${employerDocuments.length} Employers.`,
     );
 
-    // -----------------------------------------------------------
-    // CREATE DAILY WORK DOCUMENTS
-    // -----------------------------------------------------------
+    // ===========================================================
+    // CREATE DAILY WORK
+    // ===========================================================
 
     const dailyWorkDocuments = [];
 
     for (const doc of oldDocs) {
-      const normalizedName = normalizeName(doc.name);
+      const normalizedName =
+        normalizeName(doc.name);
 
-      const employerId = employerIdMap.get(normalizedName);
+      const employerId =
+        employerIdMap.get(
+          normalizedName,
+        );
 
       if (!employerId) {
         throw new Error(
-          `Employer not found for worker: "${doc.name}"`,
+          `Employer not found for: "${doc.name}"`,
         );
       }
 
       const dailyWorkDocument = {
-        _id: new mongoose.Types.ObjectId(),
+        _id:
+          new mongoose.Types.ObjectId(),
+
+        // =====================================================
+        // EMPLOYER LINK
+        // =====================================================
 
         employerId,
+
+        // =====================================================
+        // DATE
+        // =====================================================
 
         entryDate: toDate(
           doc.entryDate ||
@@ -335,58 +488,129 @@ const run = async () => {
             new Date(),
         ),
 
-        currentSite: cleanString(doc.currentSite),
+        // =====================================================
+        // SITE
+        // =====================================================
+
+        currentSite:
+          cleanString(
+            doc.currentSite,
+          ),
+
+        // =====================================================
+        // ATTENDANCE
+        // =====================================================
 
         attendance:
-          doc.attendance === "absent"
+          doc.attendance === "absent" ||
+          doc.attendence === "absent"
             ? "absent"
             : "present",
 
+        // =====================================================
+        // WORK STATUS
+        // =====================================================
+
         workStatus:
-          ["pending", "inprogress", "completed"].includes(
+          [
+            "pending",
+            "inprogress",
+            "completed",
+          ].includes(
             doc.workStatus,
           )
             ? doc.workStatus
             : "pending",
 
+        // =====================================================
+        // WORK UNDER
+        // =====================================================
+
         workUnder:
-          ["owner", "partnerShip", "client"].includes(
+          [
+            "owner",
+            "partnerShip",
+            "client",
+          ].includes(
             doc.workUnder,
           )
             ? doc.workUnder
             : undefined,
 
-        // Old daily salary is preserved.
-        salary: toNumber(doc.salary, 0),
+        // =====================================================
+        // DAILY SALARY
+        // =====================================================
 
-        // OLD FIELD:
-        // overTime
+        salary: toNumber(
+          doc.salary,
+          0,
+        ),
+
+        // =====================================================
+        // OVERTIME
+        // =====================================================
+
+        overtimeHours: toNumber(
+          doc.overTime,
+          0,
+        ),
+
+        // Calculate overtime amount from salary and hours
+        overtimeAmount: calculateOvertimeAmount(
+          toNumber(doc.salary, 0),
+          toNumber(doc.overTime, 0)
+        ),
+
+        // =====================================================
+        // ADVANCE
+        // =====================================================
         //
-        // NEW FIELD:
-        // overtimeHours
-        overtimeHours: toNumber(doc.overTime, 0),
-
-        // Old data doesn't contain overtimeAmount.
-        overtimeAmount: 0,
-
-        // OLD FIELD:
-        // advance
+        // OLD:
+        //   advanced
         //
-        // NEW FIELD:
-        // advanceAmount
-        advanceAmount: toNumber(doc.advance, 0),
+        // NEW:
+        //   advanceAmount
+        //
+        // =====================================================
 
-        description: cleanString(doc.description),
+        advanceAmount: toNumber(
+          doc.advanced,
+          0,
+        ),
 
-        deleted_at: doc.deleted_at
-          ? toDate(doc.deleted_at)
-          : null,
+        // =====================================================
+        // DESCRIPTION
+        // =====================================================
+
+        description:
+          cleanString(
+            doc.description,
+          ),
+
+        // =====================================================
+        // DELETED AT
+        // =====================================================
+
+        deleted_at:
+          doc.deleted_at
+            ? toDate(
+                doc.deleted_at,
+              )
+            : null,
+
+        // =====================================================
+        // CREATED AT
+        // =====================================================
 
         created_at: toDate(
           doc.created_at ||
             doc.entryDate ||
             new Date(),
         ),
+
+        // =====================================================
+        // UPDATED AT
+        // =====================================================
 
         updated_at: toDate(
           doc.updated_at ||
@@ -395,166 +619,235 @@ const run = async () => {
         ),
       };
 
-      dailyWorkDocuments.push(dailyWorkDocument);
+      dailyWorkDocuments.push(
+        dailyWorkDocument,
+      );
     }
 
-    // -----------------------------------------------------------
+    // ===========================================================
     // INSERT DAILY WORK
-    // -----------------------------------------------------------
+    // ===========================================================
 
-    if (dailyWorkDocuments.length > 0) {
+    if (
+      dailyWorkDocuments.length > 0
+    ) {
       await db
-        .collection(NEW_DAILYWORK_COLLECTION)
-        .insertMany(dailyWorkDocuments);
+        .collection(
+          NEW_DAILYWORK_COLLECTION,
+        )
+        .insertMany(
+          dailyWorkDocuments,
+        );
     }
 
     console.log(
-      `Created ${dailyWorkDocuments.length} DailyWork records.`,
+      `Created ${dailyWorkDocuments.length} DailyWorks.`,
     );
 
-    // -----------------------------------------------------------
-    // CREATE INDEXES
-    // -----------------------------------------------------------
+    // ===========================================================
+    // INDEXES
+    // ===========================================================
 
-    console.log("\nCreating indexes...");
-
-    await db
-      .collection(NEW_EMPLOYERS_COLLECTION)
-      .createIndex(
-        { workerId: 1 },
-        { unique: true },
-      );
+    console.log(
+      "\nCreating indexes...",
+    );
 
     await db
-      .collection(NEW_EMPLOYERS_COLLECTION)
+      .collection(
+        NEW_EMPLOYERS_COLLECTION,
+      )
       .createIndex({
         name: 1,
         status: 1,
       });
 
     await db
-      .collection(NEW_EMPLOYERS_COLLECTION)
+      .collection(
+        NEW_EMPLOYERS_COLLECTION,
+      )
       .createIndex({
         status: 1,
       });
 
     await db
-      .collection(NEW_EMPLOYERS_COLLECTION)
+      .collection(
+        NEW_EMPLOYERS_COLLECTION,
+      )
       .createIndex({
         deleted_at: 1,
       });
 
     await db
-      .collection(NEW_DAILYWORK_COLLECTION)
+      .collection(
+        NEW_DAILYWORK_COLLECTION,
+      )
       .createIndex({
         employerId: 1,
         entryDate: -1,
       });
 
     await db
-      .collection(NEW_DAILYWORK_COLLECTION)
+      .collection(
+        NEW_DAILYWORK_COLLECTION,
+      )
       .createIndex({
         entryDate: -1,
       });
 
-    // -----------------------------------------------------------
-    // VERIFICATION
-    // -----------------------------------------------------------
+    // ===========================================================
+    // VERIFY
+    // ===========================================================
 
-    const newEmployerCount = await db
-      .collection(NEW_EMPLOYERS_COLLECTION)
-      .countDocuments();
+    const newEmployerCount =
+      await db
+        .collection(
+          NEW_EMPLOYERS_COLLECTION,
+        )
+        .countDocuments();
 
-    const newDailyWorkCount = await db
-      .collection(NEW_DAILYWORK_COLLECTION)
-      .countDocuments();
+    const newDailyWorkCount =
+      await db
+        .collection(
+          NEW_DAILYWORK_COLLECTION,
+        )
+        .countDocuments();
 
-    // -----------------------------------------------------------
-    // VERIFY NAME-BASED WORKER IDS
-    // -----------------------------------------------------------
+    // ===========================================================
+    // ACTIVE / INACTIVE COUNT
+    // ===========================================================
 
-    const invalidWorkerIds = await db
-      .collection(NEW_EMPLOYERS_COLLECTION)
-      .find({
-        $expr: {
-          $ne: [
-            "$workerId",
-            {
-              $toLower: {
-                $trim: {
-                  input: "$name",
-                },
-              },
-            },
-          ],
-        },
-      })
-      .project({
-        name: 1,
-        workerId: 1,
-      })
-      .toArray();
+    const activeEmployerCount =
+      await db
+        .collection(
+          NEW_EMPLOYERS_COLLECTION,
+        )
+        .countDocuments({
+          deleted_at: null,
+        });
 
-    // -----------------------------------------------------------
+    const inactiveEmployerCount =
+      await db
+        .collection(
+          NEW_EMPLOYERS_COLLECTION,
+        )
+        .countDocuments({
+          deleted_at: {
+            $ne: null,
+          },
+        });
+
+    // ===========================================================
     // FINAL REPORT
-    // -----------------------------------------------------------
-
-    console.log("\n==============================================");
-    console.log("             MIGRATION COMPLETE");
-    console.log("==============================================");
-
-    console.log(`Old records:       ${oldDocs.length}`);
-    console.log(`Unique workers:    ${groups.size}`);
-    console.log(`New Employers:     ${newEmployerCount}`);
-    console.log(`New DailyWorks:    ${newDailyWorkCount}`);
+    // ===========================================================
 
     console.log(
-      `Invalid workerIds: ${invalidWorkerIds.length}`,
+      "\n==============================================",
     );
 
-    if (invalidWorkerIds.length > 0) {
-      console.log("\nWARNING: Some workerIds don't match normalized names.");
+    console.log(
+      "             MIGRATION COMPLETE",
+    );
 
-      for (const worker of invalidWorkerIds) {
-        console.log(
-          `Name="${worker.name}" | workerId="${worker.workerId}"`,
-        );
-      }
-    }
+    console.log(
+      "==============================================",
+    );
 
-    if (newDailyWorkCount !== oldDocs.length) {
+    console.log(
+      `Old records:       ${oldDocs.length}`,
+    );
+
+    console.log(
+      `Unique workers:    ${groups.size}`,
+    );
+
+    console.log(
+      `New Employers:     ${newEmployerCount}`,
+    );
+
+    console.log(
+      `Active Employers:  ${activeEmployerCount}`,
+    );
+
+    console.log(
+      `Inactive Employers:${inactiveEmployerCount}`,
+    );
+
+    console.log(
+      `New DailyWorks:    ${newDailyWorkCount}`,
+    );
+
+    console.log(
+      "\n✓ Worker identity = normalized name",
+    );
+
+    console.log(
+      "✓ workerId is NOT used",
+    );
+
+    console.log(
+      "✓ Same name = ONE Employer",
+    );
+
+    console.log(
+      "✓ ANY active record = ACTIVE Employer",
+    );
+
+    console.log(
+      "✓ Every old record = ONE DailyWork",
+    );
+
+    console.log(
+      "✓ Deleted DailyWork history preserved",
+    );
+
+    console.log(
+      "✓ advanced -> advanceAmount",
+    );
+
+    console.log(
+      "✓ attendance/attendence handled",
+    );
+
+    console.log(
+      `✓ Old collection "${OLD_COLLECTION}" was NOT modified`,
+    );
+
+    if (
+      newDailyWorkCount !==
+      oldDocs.length
+    ) {
       console.log(
-        "\nWARNING: DailyWork count does NOT match old record count.",
+        "\n⚠ WARNING: DailyWork count mismatch!",
       );
     } else {
       console.log(
-        "\n✓ Every old record has been migrated to DailyWork.",
+        "\n✓ DailyWork count matches old records",
       );
     }
 
     console.log(
-      "\n✓ employers_old_backup was NOT modified.",
+      "\n==============================================",
     );
-
-    console.log(
-      "✓ generateWorkerId() was NOT used.",
-    );
-
-    console.log(
-      "✓ Worker identity is based on normalized name.",
-    );
-
-    console.log(
-      "✓ One normalized name = one Employer.",
-    );
-
-    console.log("==============================================\n");
   } catch (error) {
-    console.error("\n==============================================");
-    console.error("MIGRATION FAILED");
-    console.error("==============================================");
-    console.error(error);
-    console.error("==============================================\n");
+    console.error(
+      "\n==============================================",
+    );
+
+    console.error(
+      "MIGRATION FAILED",
+    );
+
+    console.error(
+      "==============================================",
+    );
+
+    console.error(
+      error.message,
+    );
+
+    console.error(
+      "==============================================",
+    );
 
     process.exitCode = 1;
   } finally {

@@ -1,10 +1,10 @@
 import Employer from "../models/employer-model.js";
 import { formatToDDMMYYYY, resolveEntryDate, parseDDMMYYYY } from "../utils/date-helper-fun.js";
 import {
-  generateWorkerId,
+  // generateWorkerId,
   isValidNonNegativeNumber,
 } from "../scripts/backfillWorkerId.js";
-import { buildSalarySlip, getRecentEntries } from "../utils/salary-service.js";
+import { buildSalarySlip, getRecentEntries , getSalarySlipEntries,} from "../utils/salary-service.js";
 
 const formatEmployer = (doc) => ({
   ...doc.toObject(),
@@ -39,7 +39,7 @@ const createEmployer = async (req, res) => {
 
     const employer = await Employer.create({
       name: name.trim(),
-      workerId: generateWorkerId(name),
+      // workerId: generateWorkerId(name),
       designation,
       workUnder,
       salary,
@@ -68,7 +68,7 @@ const getAllEmployers = async (req, res) => {
     if (search) {
       filter.$or = [
         { name: { $regex: search, $options: "i" } },
-        { workerId: { $regex: search, $options: "i" } },
+        // { workerId: { $regex: search, $options: "i" } },
         { designation: { $regex: search, $options: "i" } },
         { workUnder: { $regex: search, $options: "i" } },
       ];
@@ -187,7 +187,7 @@ const deleteEmployer = async (req, res) => {
 const getWorkersList = async (req, res) => {
   try {
     const workers = await Employer.find({ deleted_at: null})
-      .select("workerId name designation salary")
+      .select("name designation salary")
       .sort({ name: 1 })
       .lean();
     return res.status(200).json({ success: true, data: workers });
@@ -201,26 +201,35 @@ const getEmployerSalarySlip = async (req, res) => {
   try {
     const { employerId } = req.params;
     const { startDate, endDate } = req.query;
-
+ 
     const employer = await Employer.findOne({ _id: employerId, deleted_at: null });
     if (!employer) {
       return res.status(404).json({ success: false, message: "Worker not found." });
     }
-
+ 
     const from = startDate ? parseDDMMYYYY(startDate) : null;
     const to = endDate ? parseDDMMYYYY(endDate) : null;
-
+ 
     if ((startDate && !from) || (endDate && !to)) {
       return res.status(400).json({ success: false, message: "Invalid startDate/endDate. Use DD/MM/YYYY." });
     }
-
-    const slip = await buildSalarySlip(employerId, from, to);
-
+ 
+    const [slip, entries] = await Promise.all([
+      buildSalarySlip(employerId, from, to),
+      getSalarySlipEntries(employerId, from, to),
+    ]);
+ 
     return res.status(200).json({
       success: true,
       slip: {
-        employer: { id: employer._id, name: employer.name, designation: employer.designation },
+        employer: {
+          id: employer._id,
+          name: employer.name,
+          designation: employer.designation,
+          salary: employer.salary,
+        },
         period: { startDate: startDate || null, endDate: endDate || null },
+        entries,
         ...slip,
       },
     });

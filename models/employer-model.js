@@ -14,12 +14,12 @@ const employerSchema = new mongoose.Schema(
       index: true,
     },
 
-    workerId: {
-      type: String,
-      required: true,
-      unique: true,
-      index: true,
-    },
+    // workerId: {
+    //   type: String,
+    //   required: true,
+    //   unique: true,
+    //   index: true,
+    // },
 
     designation: {
       type: String,
