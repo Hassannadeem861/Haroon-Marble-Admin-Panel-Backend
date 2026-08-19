@@ -5,7 +5,9 @@
  * pass kare. Ye file sirf pure parse/format functions rakhti hai.
  */
 
-// "13/08/2026" or "13/08/2026 14:30" -> JS Date (local time, no UTC shift)
+const PAKISTAN_OFFSET_MINUTES = 5 * 60;
+
+// "13/08/2026" or "13/08/2026 14:30" -> fixed Pakistan time
 export const parseDDMMYYYY = (dateStr) => {
   if (!dateStr || typeof dateStr !== "string") return null;
 
@@ -23,13 +25,16 @@ export const parseDDMMYYYY = (dateStr) => {
     minutes = m || 0;
   }
 
-  const date = new Date(year, month - 1, day, hours, minutes);
+  const date = new Date(
+    Date.UTC(year, month - 1, day, hours, minutes) - PAKISTAN_OFFSET_MINUTES * 60 * 1000,
+  );
 
   // Reject invalid dates like 31/02/2026
+  const pakistanDate = new Date(date.getTime() + PAKISTAN_OFFSET_MINUTES * 60 * 1000);
   if (
-    date.getFullYear() !== year ||
-    date.getMonth() !== month - 1 ||
-    date.getDate() !== day
+    pakistanDate.getUTCFullYear() !== year ||
+    pakistanDate.getUTCMonth() !== month - 1 ||
+    pakistanDate.getUTCDate() !== day
   ) {
     return null;
   }
@@ -37,15 +42,16 @@ export const parseDDMMYYYY = (dateStr) => {
   return date;
 };
 
-// JS Date -> "13/08/2026"
+// JS Date -> "13/08/2026" using fixed Pakistan time
 export const formatToDDMMYYYY = (date) => {
   if (!date) return null;
   const d = new Date(date);
   if (Number.isNaN(d.getTime())) return null;
 
-  const day = String(d.getDate()).padStart(2, "0");
-  const month = String(d.getMonth() + 1).padStart(2, "0");
-  const year = d.getFullYear();
+  const pakistanDate = new Date(d.getTime() + PAKISTAN_OFFSET_MINUTES * 60 * 1000);
+  const day = String(pakistanDate.getUTCDate()).padStart(2, "0");
+  const month = String(pakistanDate.getUTCMonth() + 1).padStart(2, "0");
+  const year = pakistanDate.getUTCFullYear();
   return `${day}/${month}/${year}`;
 };
 
