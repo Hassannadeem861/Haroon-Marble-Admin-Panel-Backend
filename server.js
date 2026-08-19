@@ -9,21 +9,12 @@ import { fileURLToPath } from "url";
 import connectDB from "./database/db.js";
 
 const __filename = fileURLToPath(import.meta.url);
-// console.log("__filename: ", __filename); // server.js
 
 const __dirname = path.dirname(__filename);
-// console.log("__dirname: ", __dirname); //Backend
 
 const app = express();
 
 connectDB();
-
-// const corsOptions = {
-//   origin: "https://vercel-hrms-client.vercel.app",
-//   // origin: "http://localhost:5173",
-//   methods: ["GET", "HEAD", "PUT", "PATCH", "POST", "DELETE"],
-//   credentials: true,
-// };
 
 // Step 1: CORS setup fix
 const allowedOrigins = [
@@ -32,6 +23,7 @@ const allowedOrigins = [
   // "https://haroon-marble-admin-panel.vercel.app",
   // "http://localhost:5173",
 ];
+
 app.use(
   cors({
     origin: function (origin, callback) {
@@ -51,9 +43,6 @@ app.use(
     allowedHeaders: ["Content-Type", "Authorization"],
   }),
 );
-
-// CORS preflight ke liye OPTIONS route handle karo
-// app.options("*", cors());
 
 // app.use(cors(corsOptions));
 app.use(express.urlencoded({ extended: true }));
