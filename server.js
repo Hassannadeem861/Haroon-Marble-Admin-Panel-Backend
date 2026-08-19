@@ -64,7 +64,10 @@ import DailyWorkRoutes from "./routes/daliy-work-routes.js";
 import SiteRoutes from "./routes/site-route.js";
 import SiteMaterialRoutes from "./routes/site-material-route.js";
 import SiteExpenseRoutes from "./routes/site-expence-route.js";
+import dashboardRoutes from "./routes/dashboard-routes.js";
 
+
+app.use("/api/v1", dashboardRoutes);
 app.use("/api/v1", AdminAuthRouter);
 app.use("/api/v1", employerRouter);
 app.use("/api/v1", DailyWorkRoutes);
