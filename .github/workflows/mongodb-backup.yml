@@ -20,6 +20,10 @@ jobs:
       - name: Verify mongodump
         run: mongodump --version
 
+      - name: Set backup date
+        id: date
+        run: echo "date=$(date +%F)" >> "$GITHUB_OUTPUT"
+
       - name: Create MongoDB Backup
         run: |
           mkdir -p backup
@@ -44,8 +48,17 @@ jobs:
 
       - name: Upload MongoDB Backup to Google Drive
         run: |
-          rclone copy backup "gdrive:MongoDB Backups" --create-empty-src-dirs -P
+          rclone copy backup "gdrive:MongoDB Backups/${{ steps.date.outputs.date }}" --create-empty-src-dirs -P
 
       - name: Verify Backup
         run: |
-          rclone ls "gdrive:MongoDB Backups"
+          rclone ls "gdrive:MongoDB Backups/${{ steps.date.outputs.date }}"
+
+      - name: Delete backups older than 7 days
+        run: |
+          rclone delete "gdrive:MongoDB Backups" --min-age 7d -v
+          rclone rmdirs "gdrive:MongoDB Backups" --leave-root -v
+
+      - name: List remaining backups
+        run: |
+          rclone lsd "gdrive:MongoDB Backups"
