@@ -39,7 +39,8 @@ jobs:
           echo "$RCLONE_CONFIG_B64" | base64 --decode > ~/.config/rclone/rclone.conf
 
       - name: Verify Google Drive
-        run: rclone lsd gdrive:
+        run: |
+          rclone lsd gdrive:
 
       - name: Upload MongoDB Backup to Google Drive
         run: |
