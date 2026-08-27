@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   schedule:
     # Daily at 12:00 AM UTC = 5:00 AM Pakistan time
-    - cron: "0 0 * * *"
+    - cron: "17 0 * * *"
 
 jobs:
   backup:
