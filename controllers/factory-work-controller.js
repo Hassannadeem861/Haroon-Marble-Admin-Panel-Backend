@@ -159,7 +159,6 @@ const updateFactoryWork = async (req, res) => {
     } = req.body;
 
     const existingWork = await FactoryWork.findOne({ _id: workId, deleted_at: null });
-    console.log("existingWork: ", existingWork);
 
     if (!existingWork) {
       return res.status(404).json({

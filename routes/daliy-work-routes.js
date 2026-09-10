@@ -1,6 +1,7 @@
 import express from "express";
 import {
   createDailyWork,
+  bulkCreateDailyWork,
   getAllDailyWork,
   getSingleDailyWork,
   updateDailyWork,
@@ -11,6 +12,9 @@ const router = express.Router();
 
 // POST /create-daily-work
 router.post("/create-daily-work", createDailyWork);
+
+// POST /bulk-create-daily-work — same worker, multiple dates in one call
+router.post("/bulk-create-daily-work", bulkCreateDailyWork);
 
 // GET /get-all-daily-work — filters: date, startDate, endDate, employerId, site, attendance, workStatus, worker
 router.get("/get-all-daily-work", getAllDailyWork);

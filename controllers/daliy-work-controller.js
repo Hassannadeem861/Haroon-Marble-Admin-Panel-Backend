@@ -86,6 +86,117 @@ const createDailyWork = async (req, res) => {
   }
 };
 
+// POST /bulk-create-daily-work
+// Ek hi worker ke liye multiple dates ek saath create karne ke liye
+// (e.g. "Hassan ka pichle 10 din ka kaam add karo"). Sirf `employerId` aur
+// `attendance` sab dates ke liye common hain — baaki har field (currentSite,
+// workStatus, workUnder, salary, overtimeHours, advanceAmount, description)
+// har date ke liye `perDateOverrides` se alag di ja sakti hai (e.g. "13/08"
+// ko ek site pe kaam kiya, "14/08" ko dusri site pe — alag alag likh sakte hain).
+// Top-level currentSite/workStatus/workUnder/salary/overtimeHours/
+// advanceAmount/description sirf DEFAULT/fallback ke tor par kaam karte hain
+// jab kisi date ke liye override na diya gaya ho.
+//
+// Body: { employerId, dates: ["13/08/2026", "14/08/2026", ...], attendance,
+//         currentSite, workStatus, workUnder, salary, overtimeHours, advanceAmount, description,
+//         perDateOverrides: { "13/08/2026": { currentSite, workStatus, workUnder, salary, overtimeHours, advanceAmount, description } } }
+const bulkCreateDailyWork = async (req, res) => {
+  try {
+    const {
+      employerId,
+      dates,
+      currentSite,
+      attendance,
+      workStatus,
+      workUnder,
+      salary,
+      overtimeHours = 0,
+      advanceAmount = 0,
+      description,
+      perDateOverrides = {},
+    } = req.body;
+
+    if (!employerId || !isValidObjectIdString(employerId)) {
+      return res.status(400).json({ success: false, message: "Valid employerId is required." });
+    }
+    if (!Array.isArray(dates) || dates.length === 0) {
+      return res.status(400).json({ success: false, message: "dates must be a non-empty array of DD/MM/YYYY strings." });
+    }
+    if (!attendance) {
+      return res.status(400).json({ success: false, message: "attendance is required." });
+    }
+
+    const employer = await Employer.findOne({ _id: employerId, deleted_at: null });
+    if (!employer) {
+      return res.status(404).json({ success: false, message: "Worker not found or has been deleted." });
+    }
+
+    const defaultSalary = salary !== undefined ? salary : employer.salary;
+
+    // Parse + validate every date up front — agar ek bhi invalid ho to
+    // pura batch reject karo, koi partial insert nahi (predictable rahe).
+    const docs = [];
+    for (const dateStr of dates) {
+      const parsedDate = parseDDMMYYYY(dateStr);
+      if (!parsedDate) {
+        return res.status(400).json({
+          success: false,
+          message: `Invalid date "${dateStr}". Expected format: DD/MM/YYYY`,
+        });
+      }
+
+      const override = perDateOverrides[dateStr] || {};
+      const finalCurrentSite = override.currentSite !== undefined ? override.currentSite : currentSite;
+      const finalWorkStatus = override.workStatus !== undefined ? override.workStatus : workStatus;
+      const finalWorkUnder = override.workUnder !== undefined ? override.workUnder : workUnder;
+      const finalSalary = override.salary !== undefined ? override.salary : defaultSalary;
+      const finalOvertimeHours = override.overtimeHours !== undefined ? override.overtimeHours : overtimeHours;
+      const finalAdvanceAmount = override.advanceAmount !== undefined ? override.advanceAmount : advanceAmount;
+      const finalDescription = override.description !== undefined ? override.description : description;
+
+      if (!isValidNonNegativeNumber(finalSalary) || Number(finalSalary) < 0) {
+        return res.status(400).json({
+          success: false,
+          message: `Invalid salary for date "${dateStr}".`,
+        });
+      }
+      if (!isValidNonNegativeNumber(finalOvertimeHours) || !isValidNonNegativeNumber(finalAdvanceAmount)) {
+        return res.status(400).json({
+          success: false,
+          message: `Invalid overtimeHours/advanceAmount override for date "${dateStr}".`,
+        });
+      }
+
+      docs.push({
+        employerId,
+        entryDate: parsedDate,
+        currentSite: finalCurrentSite,
+        attendance,
+        workStatus: finalWorkStatus,
+        workUnder: finalWorkUnder,
+        salary: finalSalary,
+        overtimeHours: finalOvertimeHours,
+        overtimeAmount: calculateOvertimeAmount(finalSalary, finalOvertimeHours),
+        advanceAmount: finalAdvanceAmount,
+        description: finalDescription,
+      });
+    }
+
+    const created = await DailyWork.insertMany(docs);
+
+    return res.status(201).json({
+      success: true,
+      message: `${created.length} daily work record(s) created successfully.`,
+      data: created.map((doc) => ({
+        ...doc.toObject(),
+        entryDate: formatToDDMMYYYY(doc.entryDate),
+      })),
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: "Error creating daily work records.", error: error.message });
+  }
+};
+
 // GET /daily-work — filters: date, startDate, endDate, employerId, site, attendance, workStatus
 const getAllDailyWork = async (req, res) => {
   try {
@@ -236,6 +347,7 @@ const deleteDailyWork = async (req, res) => {
 
 export {
   createDailyWork,
+  bulkCreateDailyWork,
   getAllDailyWork,
   getSingleDailyWork,
   updateDailyWork,

@@ -64,7 +64,6 @@ const getAllEmployers = async (req, res) => {
 
     const filter = { deleted_at: null };
     // if (status) filter.status = status;
-    // console.log("status: ",status)
     if (search) {
       filter.$or = [
         { name: { $regex: search, $options: "i" } },
