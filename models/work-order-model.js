@@ -29,7 +29,9 @@ const workOrderSchema = new mongoose.Schema(
 
     status: {
       type: String,
-      enum: ["pending_sample", "in_review", "approved", "in_progress", "completed", "cancelled"],
+      // Status khud-ba-khud SampleRound se sync hota hai (syncWorkOrderStatus) —
+      // sirf "cancelled" manually set hota hai. "completed" purane records ke liye hai.
+      enum: ["pending_sample", "in_review", "approved", "in_progress", "rework_required", "completed", "cancelled"],
       default: "pending_sample",
       index: true,
     },

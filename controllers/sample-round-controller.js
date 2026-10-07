@@ -1,7 +1,19 @@
+import mongoose from "mongoose";
 import SampleRound from "../models/sample-round-model.js";
+import SiteIssue from "../models/site-issue-model.js";
 import WorkOrder from "../models/work-order-model.js";
 import { formatToDDMMYYYY, resolveEntryDate } from "../utils/date-helper-fun.js";
-import { isValidObjectIdString } from "../scripts/backfillWorkerId.js";
+import { isValidObjectIdString, isMongooseInputError } from "../utils/validators.js";
+import { getLatestRound, syncWorkOrderStatus } from "../utils/work-order-service.js";
+
+/**
+ * Naye flow mein ek SampleRound = kaam ka ek round (attempt):
+ *   sampleStartDate  = Kaam shuru
+ *   sampleReadyDate  = Kaam mukammal
+ *   clientResponseDate + responseStatus + rejectionNotes = Client ka jawab
+ * Reject hone par naya round (Rework) banta hai. DB field names purane hi hain.
+ */
+const RESPONSE_STATUSES = ["pending", "approved", "rejected"];
 
 const formatRound = (doc) => ({
   ...doc.toObject(),
@@ -11,115 +23,222 @@ const formatRound = (doc) => ({
   clientResponseDate: formatToDDMMYYYY(doc.clientResponseDate),
 });
 
-// POST /create-sample-round — auto-increments roundNumber for the work order.
-// Use this both for the very first sample AND for a redesign after rejection.
+const badRequest = (message) => {
+  const err = new Error(message);
+  err.status = 400;
+  return err;
+};
+
+const isFutureDate = (date) => date && date.getTime() > Date.now();
+
+// start <= mukammal <= client jawab; koi bhi date future mein nahi.
+const validateRoundDates = (round) => {
+  const { sampleStartDate: start, sampleReadyDate: ready, clientResponseDate: response } = round;
+  if ([start, ready, response].some(isFutureDate)) {
+    throw badRequest("Aane wali (future) date nahi di ja sakti.");
+  }
+  if (start && ready && ready < start) {
+    throw badRequest("Kaam mukammal hone ki date, kaam shuru hone ki date se pehle nahi ho sakti.");
+  }
+  if (ready && response && response < ready) {
+    throw badRequest("Client ke jawab ki date, kaam mukammal hone ki date se pehle nahi ho sakti.");
+  }
+};
+
+const sendError = (res, error, fallbackMessage) => {
+  if (error.status) return res.status(error.status).json({ success: false, message: error.message });
+  if (isMongooseInputError(error)) return res.status(400).json({ success: false, message: error.message });
+  console.error(fallbackMessage, error);
+  return res.status(500).json({ success: false, message: fallbackMessage });
+};
+
+// POST /create-sample-round — "Kaam Shuru" (pehla round) ya "Rework" (reject ke baad naya round).
 const createSampleRound = async (req, res) => {
+  const session = await mongoose.startSession();
   try {
-    const { workOrderId, workStartDate, sampleStartDate, sampleReadyDate, sentToClientDate, description } = req.body;
+    const { workOrderId, workStartDate, sampleStartDate, description } = req.body;
 
     if (!workOrderId || !isValidObjectIdString(workOrderId)) {
       return res.status(400).json({ success: false, message: "Valid workOrderId is required." });
     }
 
-    const workOrder = await WorkOrder.findOne({ _id: workOrderId, deleted_at: null });
-    if (!workOrder) {
-      return res.status(404).json({ success: false, message: "Work order not found or has been deleted." });
-    }
+    let round;
+    await session.withTransaction(async () => {
+      const workOrder = await WorkOrder.findOne({ _id: workOrderId, deleted_at: null }).session(session);
+      if (!workOrder) {
+        const err = new Error("Work order not found or has been deleted.");
+        err.status = 404;
+        throw err;
+      }
+      if (workOrder.status === "cancelled") throw badRequest("Cancelled work report par kaam shuru nahi ho sakta.");
 
-    const existingCount = await SampleRound.countDocuments({ workOrderId, deleted_at: null });
-    const roundNumber = existingCount + 1;
+      const latestRound = await getLatestRound(workOrderId, session);
+      if (latestRound && latestRound.responseStatus !== "rejected") {
+        throw badRequest(
+          latestRound.responseStatus === "approved"
+            ? "Ye kaam client approve kar chuka hai — naya round nahi ban sakta."
+            : "Pehle wala round abhi khatam nahi hua.",
+        );
+      }
 
-    let finalReadyDate = null;
-    let finalSentDate = null;
-    let finalSampleStartDate = null;
-    try {
-      finalSampleStartDate = (sampleStartDate || workStartDate)
-        ? resolveEntryDate(sampleStartDate || workStartDate, null)
-        : null;
-      finalReadyDate = sampleReadyDate ? resolveEntryDate(sampleReadyDate, null) : null;
-      finalSentDate = sentToClientDate ? resolveEntryDate(sentToClientDate, null) : null;
-    } catch (err) {
-      return res.status(err.status || 400).json({ success: false, message: err.message });
-    }
+      // Soft-deleted rounds bhi gino taake roundNumber kabhi repeat na ho.
+      const lastNumbered = await SampleRound.findOne({ workOrderId })
+        .sort({ roundNumber: -1 })
+        .select("roundNumber")
+        .session(session);
 
-    const round = await SampleRound.create({
-      workOrderId,
-      roundNumber,
-      sampleStartDate: finalSampleStartDate,
-      sampleReadyDate: finalReadyDate,
-      sentToClientDate: finalSentDate,
-      description: description?.trim() || "",
+      const startDate = resolveEntryDate(sampleStartDate || workStartDate, new Date());
+      validateRoundDates({ sampleStartDate: startDate });
+
+      [round] = await SampleRound.create(
+        [
+          {
+            workOrderId,
+            roundNumber: (lastNumbered?.roundNumber || 0) + 1,
+            sampleStartDate: startDate,
+            description: description?.trim() || "",
+          },
+        ],
+        { session },
+      );
+
+      await syncWorkOrderStatus(workOrderId, session);
     });
 
-    // First round moves the work order out of its default state so it
-    // shows as "waiting on client" rather than "not started".
-    if (workOrder.status === "pending_sample") {
-      workOrder.status = "in_review";
-      await workOrder.save();
-    }
-
-    return res.status(201).json({ success: true, message: "Sample round added successfully.", data: formatRound(round) });
+    return res.status(201).json({
+      success: true,
+      message: round.roundNumber > 1 ? "Rework shuru ho gaya." : "Kaam shuru ho gaya.",
+      data: formatRound(round),
+    });
   } catch (error) {
-    return res.status(500).json({ success: false, message: "Error creating sample round.", error: error.message });
+    return sendError(res, error, "Error creating sample round.");
+  } finally {
+    await session.endSession();
   }
 };
 
-// PUT /update-sample-round/:id — record client's response (approved/rejected).
-// Approving syncs the parent WorkOrder.status to "approved" automatically.
+// PUT /update-sample-round/:id — "Kaam Mukammal" (sampleReadyDate) ya "Client ka Jawab".
 const updateSampleRound = async (req, res) => {
+  const session = await mongoose.startSession();
   try {
     const { id } = req.params;
-    const { workStartDate, sampleStartDate, sampleReadyDate, sentToClientDate, clientResponseDate, responseStatus, rejectionNotes } = req.body;
+    const {
+      workStartDate,
+      sampleStartDate,
+      description,
+      sampleReadyDate,
+      sentToClientDate,
+      clientResponseDate,
+      responseStatus,
+      rejectionNotes,
+    } = req.body;
 
-    const round = await SampleRound.findOne({ _id: id, deleted_at: null });
-    if (!round) {
-      return res.status(404).json({ success: false, message: "Sample round not found." });
+    if (!isValidObjectIdString(id)) {
+      return res.status(400).json({ success: false, message: "Invalid round id." });
+    }
+    if (responseStatus !== undefined && !RESPONSE_STATUSES.includes(responseStatus)) {
+      return res.status(400).json({ success: false, message: "responseStatus must be pending, approved or rejected." });
     }
 
-    try {
+    let round;
+    await session.withTransaction(async () => {
+      round = await SampleRound.findOne({ _id: id, deleted_at: null }).session(session);
+      if (!round) {
+        const err = new Error("Sample round not found.");
+        err.status = 404;
+        throw err;
+      }
+
+      const workOrder = await WorkOrder.findOne({ _id: round.workOrderId, deleted_at: null }).session(session);
+      if (!workOrder || workOrder.status === "cancelled") {
+        throw badRequest("Ye work report cancel ya delete ho chuki hai.");
+      }
+
+      const latestRound = await getLatestRound(round.workOrderId, session);
+      if (String(latestRound?._id) !== String(round._id)) {
+        throw badRequest("Sirf aakhri (current) round edit ho sakta hai.");
+      }
+      if (round.responseStatus === "approved") {
+        throw badRequest("Approved round edit nahi ho sakta.");
+      }
+
       if (sampleStartDate !== undefined || workStartDate !== undefined) {
         round.sampleStartDate = resolveEntryDate(sampleStartDate || workStartDate, round.sampleStartDate);
       }
-      if (sampleReadyDate !== undefined) round.sampleReadyDate = resolveEntryDate(sampleReadyDate, round.sampleReadyDate);
-      if (sentToClientDate !== undefined) round.sentToClientDate = resolveEntryDate(sentToClientDate, round.sentToClientDate);
-      if (clientResponseDate !== undefined) round.clientResponseDate = resolveEntryDate(clientResponseDate, round.clientResponseDate);
-    } catch (err) {
-      return res.status(err.status || 400).json({ success: false, message: err.message });
-    }
+      if (description !== undefined) round.description = description.trim();
+      if (sampleReadyDate !== undefined) {
+        round.sampleReadyDate = sampleReadyDate === "" ? null : resolveEntryDate(sampleReadyDate, round.sampleReadyDate);
+      }
+      if (sentToClientDate !== undefined) {
+        round.sentToClientDate = resolveEntryDate(sentToClientDate, round.sentToClientDate);
+      }
+      if (responseStatus !== undefined) round.responseStatus = responseStatus;
+      if (rejectionNotes !== undefined) round.rejectionNotes = rejectionNotes.trim();
 
-    if (responseStatus !== undefined) round.responseStatus = responseStatus;
-    if (rejectionNotes !== undefined) round.rejectionNotes = rejectionNotes.trim();
+      if (round.responseStatus === "pending") {
+        round.clientResponseDate = null;
+      } else {
+        if (!round.sampleReadyDate) {
+          throw badRequest("Client ka jawab tab hi record hoga jab kaam mukammal ho chuka ho.");
+        }
+        round.clientResponseDate = resolveEntryDate(clientResponseDate, round.clientResponseDate || new Date());
+      }
 
-    await round.save();
+      if (round.responseStatus === "rejected" && !round.rejectionNotes) {
+        throw badRequest("Reject ki wajah likhna zaroori hai.");
+      }
 
-    // Keep the parent WorkOrder's status in sync with the latest response.
-    if (responseStatus === "approved") {
-      await WorkOrder.findByIdAndUpdate(round.workOrderId, { status: "approved" });
-    } else if (responseStatus === "rejected") {
-      await WorkOrder.findByIdAndUpdate(round.workOrderId, { status: "in_review" });
-    }
+      if (round.responseStatus === "approved") {
+        const openIssues = await SiteIssue.countDocuments({
+          roundId: round._id,
+          deleted_at: null,
+          resolvedDate: null,
+        }).session(session);
+        if (openIssues > 0) {
+          throw badRequest(`Pehle ${openIssues} jari problem(s) ko "Hal ho gayi" mark karein, phir approve karein.`);
+        }
+      }
+
+      validateRoundDates(round);
+      await round.save({ session });
+      await syncWorkOrderStatus(round.workOrderId, session);
+    });
 
     return res.status(200).json({ success: true, message: "Sample round updated successfully.", data: formatRound(round) });
   } catch (error) {
-    return res.status(500).json({ success: false, message: "Error updating sample round.", error: error.message });
+    return sendError(res, error, "Error updating sample round.");
+  } finally {
+    await session.endSession();
   }
 };
 
 // DELETE /delete-sample-round/:id — soft delete (rare — mistaken entry only)
 const deleteSampleRound = async (req, res) => {
+  const session = await mongoose.startSession();
   try {
     const { id } = req.params;
-    const round = await SampleRound.findOneAndUpdate(
-      { _id: id, deleted_at: null },
-      { deleted_at: new Date() },
-      { new: true },
-    );
+    if (!isValidObjectIdString(id)) {
+      return res.status(400).json({ success: false, message: "Invalid round id." });
+    }
+
+    let round;
+    await session.withTransaction(async () => {
+      round = await SampleRound.findOneAndUpdate(
+        { _id: id, deleted_at: null },
+        { deleted_at: new Date() },
+        { new: true, session },
+      );
+      if (round) await syncWorkOrderStatus(round.workOrderId, session);
+    });
+
     if (!round) {
       return res.status(404).json({ success: false, message: "Sample round not found or already deleted." });
     }
     return res.status(200).json({ success: true, message: "Sample round deleted successfully." });
   } catch (error) {
-    return res.status(500).json({ success: false, message: "Error deleting sample round.", error: error.message });
+    return sendError(res, error, "Error deleting sample round.");
+  } finally {
+    await session.endSession();
   }
 };
 

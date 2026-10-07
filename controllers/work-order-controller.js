@@ -1,35 +1,40 @@
 import WorkOrder from "../models/work-order-model.js";
-import { formatToDDMMYYYY, resolveEntryDate } from "../utils/date-helper-fun.js";
-import { getWorkOrderTimeline } from "../utils/work-order-service.js";
+import Site from "../models/site-model.js";
+import { formatToDDMMYYYY } from "../utils/date-helper-fun.js";
+import { isValidObjectIdString } from "../utils/validators.js";
+import { getWorkOrderTimeline, syncWorkOrderStatus } from "../utils/work-order-service.js";
+
+const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 const formatWorkOrder = (doc) => ({
   ...doc.toObject(),
   workStartDate: formatToDDMMYYYY(doc.workStartDate),
-  expectedCompletionDate: formatToDDMMYYYY(doc.expectedCompletionDate),
   actualCompletionDate: formatToDDMMYYYY(doc.actualCompletionDate),
 });
 
 // POST /create-work-order
 const createWorkOrder = async (req, res) => {
   try {
-    const { title, siteId, expectedCompletionDate, description } = req.body;
+    const { title, siteId, clientName, description } = req.body;
 
-    if (!title || !siteId) {
+    if (!title?.trim() || !siteId) {
       return res.status(400).json({ success: false, message: "title, siteId are required." });
     }
+    if (!isValidObjectIdString(siteId)) {
+      return res.status(400).json({ success: false, message: "Valid siteId is required." });
+    }
 
-    let finalExpected = null;
-    try {
-      finalExpected = expectedCompletionDate ? resolveEntryDate(expectedCompletionDate, null) : null;
-    } catch (err) {
-      return res.status(err.status || 400).json({ success: false, message: err.message });
+    const site = await Site.findOne({ _id: siteId, deleted_at: null });
+    if (!site) {
+      return res.status(404).json({ success: false, message: "Site not found or has been deleted." });
     }
 
     const workOrder = await WorkOrder.create({
       title: title.trim(),
-      siteId: siteId || null,
-    //   expectedCompletionDate: finalExpected,
-    //   description: description?.trim() || "",
+      siteId,
+      // Client ka naam na diya ho to site ke owner ka naam.
+      clientName: clientName?.trim() || site.ownerName || "",
+      description: description?.trim() || "",
     });
 
     return res.status(201).json({ success: true, message: "Work order created successfully.", data: formatWorkOrder(workOrder) });
@@ -46,10 +51,12 @@ const getAllWorkOrders = async (req, res) => {
     const filter = { deleted_at: null };
     if (status) filter.status = status;
     if (search) {
+      const pattern = escapeRegex(String(search));
+      const matchedSiteIds = await Site.find({ name: { $regex: pattern, $options: "i" } }).distinct("_id");
       filter.$or = [
-        { title: { $regex: search, $options: "i" } },
-        { siteId: await Site.find({ name: { $regex: search, $options: "i" } }).distinct("_id") },
-        // { clientName: { $regex: search, $options: "i" } },
+        { title: { $regex: pattern, $options: "i" } },
+        { clientName: { $regex: pattern, $options: "i" } },
+        { siteId: { $in: matchedSiteIds } },
       ];
     }
 
@@ -106,43 +113,54 @@ const getSingleWorkOrder = async (req, res) => {
   }
 };
 
-// PUT /update-work-order/:workOrderId — profile fields + status transitions
-// (workStartDate -> moves to in_progress, actualCompletionDate -> completed)
+// PUT /update-work-order/:workOrderId — profile fields only.
+// Status rounds se khud sync hota hai; manually sirf "cancelled" set (ya wapas khol) sakte hain.
 const updateWorkOrder = async (req, res) => {
   try {
     const { workOrderId } = req.params;
-    const { title, clientName, siteId, status, workStartDate, expectedCompletionDate, actualCompletionDate, description } = req.body;
+    const { title, clientName, siteId, status, description } = req.body;
+
+    if (!isValidObjectIdString(workOrderId)) {
+      return res.status(400).json({ success: false, message: "Invalid work order id." });
+    }
 
     const workOrder = await WorkOrder.findOne({ _id: workOrderId, deleted_at: null });
     if (!workOrder) {
       return res.status(404).json({ success: false, message: "Work order not found." });
     }
 
-    if (title !== undefined) workOrder.title = title.trim();
-    // if (clientName !== undefined) workOrder.clientName = clientName.trim();
-    if (siteId !== undefined) workOrder.siteId = siteId || null;
-    if (description !== undefined) workOrder.description = description.trim();
-    if (status !== undefined) workOrder.status = status;
-
-    try {
-      if (workStartDate !== undefined) {
-        workOrder.workStartDate = resolveEntryDate(workStartDate, workOrder.workStartDate);
-        if (workOrder.status === "approved") workOrder.status = "in_progress";
-      }
-    //   if (expectedCompletionDate !== undefined) {
-    //     workOrder.expectedCompletionDate = resolveEntryDate(expectedCompletionDate, workOrder.expectedCompletionDate);
-    //   }
-      if (actualCompletionDate !== undefined) {
-        workOrder.actualCompletionDate = resolveEntryDate(actualCompletionDate, workOrder.actualCompletionDate);
-        if (workOrder.actualCompletionDate) workOrder.status = "completed";
-      }
-    } catch (err) {
-      return res.status(err.status || 400).json({ success: false, message: err.message });
+    if (status !== undefined && status !== workOrder.status && status !== "cancelled" && workOrder.status !== "cancelled") {
+      return res.status(400).json({ success: false, message: "Status khud update hota hai — manually sirf Cancel kar sakte hain." });
     }
+
+    if (siteId !== undefined) {
+      if (!isValidObjectIdString(siteId)) {
+        return res.status(400).json({ success: false, message: "Valid siteId is required." });
+      }
+      const site = await Site.findOne({ _id: siteId, deleted_at: null });
+      if (!site) {
+        return res.status(404).json({ success: false, message: "Site not found or has been deleted." });
+      }
+      workOrder.siteId = siteId;
+    }
+
+    if (title !== undefined) {
+      if (!title.trim()) return res.status(400).json({ success: false, message: "Title khali nahi ho sakta." });
+      workOrder.title = title.trim();
+    }
+    if (clientName !== undefined) workOrder.clientName = clientName.trim();
+    if (description !== undefined) workOrder.description = description.trim();
+
+    const reopening = workOrder.status === "cancelled" && status !== undefined && status !== "cancelled";
+    if (status === "cancelled") workOrder.status = "cancelled";
+    if (reopening) workOrder.status = "pending_sample";
 
     await workOrder.save();
 
-    return res.status(200).json({ success: true, message: "Work order updated successfully.", data: formatWorkOrder(workOrder) });
+    // Cancel se wapas kholne par asal status rounds se dobara nikalo.
+    const finalWorkOrder = reopening ? await syncWorkOrderStatus(workOrder._id) : workOrder;
+
+    return res.status(200).json({ success: true, message: "Work order updated successfully.", data: formatWorkOrder(finalWorkOrder) });
   } catch (error) {
     return res.status(500).json({ success: false, message: "Error updating work order.", error: error.message });
   }

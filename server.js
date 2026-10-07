@@ -67,7 +67,8 @@ import SiteExpenseRoutes from "./routes/site-expence-route.js";
 import dashboardRoutes from "./routes/dashboard-routes.js";
 import workOrderRoutes from "./routes/work-order-route.js";
 import sampleRoundRoutes from "./routes/sample-round-route.js";
-
+import siteIssueRoutes from "./routes/site-issue-route.js";
+import multer from "multer";
 
 
 app.use("/api/v1", dashboardRoutes);
@@ -75,15 +76,32 @@ app.use("/api/v1", AdminAuthRouter);
 app.use("/api/v1", employerRouter);
 app.use("/api/v1", workOrderRoutes);
 app.use("/api/v1", sampleRoundRoutes);
+app.use("/api/v1", siteIssueRoutes);
 app.use("/api/v1", DailyWorkRoutes);
 app.use("/api/v1/factory-work", factoryWorkRoutes);
 app.use("/api/v1/site", SiteRoutes);
 app.use("/api/v1/site-material", SiteMaterialRoutes);
 app.use("/api/v1/site-expense", SiteExpenseRoutes);
 
-// test route
-app.get("/", (req, res) => {
-  res.json({ message: "Backend running on Vercel 🚀" });
+const MULTER_ERROR_MESSAGES = {
+  LIMIT_FILE_SIZE: "Har photo zyada se zyada 5 MB ki ho sakti hai.",
+  LIMIT_FILE_COUNT: "Zyada se zyada 5 photos lag sakti hain.",
+  LIMIT_UNEXPECTED_FILE: "Zyada se zyada 5 photos, field name \"images\" hona chahiye.",
+};
+
+// Global error handler — multer, galat JSON aur baqi unexpected errors ka JSON response.
+app.use((err, req, res, next) => {
+  if (err instanceof multer.MulterError) {
+    return res.status(400).json({ success: false, message: MULTER_ERROR_MESSAGES[err.code] || "Photo upload mein masla aaya." });
+  }
+  if (err.code === "INVALID_FILE_TYPE") {
+    return res.status(400).json({ success: false, message: err.message });
+  }
+  if (err.type === "entity.parse.failed") {
+    return res.status(400).json({ success: false, message: "Invalid JSON body." });
+  }
+  console.error("Unhandled error:", err);
+  return res.status(err.status || 500).json({ success: false, message: "Server error. Please try again." });
 });
 
 const PORT = process.env.PORT;

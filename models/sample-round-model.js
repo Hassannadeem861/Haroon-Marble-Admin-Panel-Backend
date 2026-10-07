@@ -72,7 +72,7 @@ const sampleRoundSchema = new mongoose.Schema(
   },
 );
 
-sampleRoundSchema.index({ workOrderId: 1, roundNumber: 1 });
+sampleRoundSchema.index({ workOrderId: 1, roundNumber: 1 }, { unique: true });
 
 const SampleRound = mongoose.model("SampleRound", sampleRoundSchema);
 export default SampleRound;

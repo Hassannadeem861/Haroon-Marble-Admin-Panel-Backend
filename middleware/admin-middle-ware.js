@@ -31,7 +31,8 @@ const authMiddleware = async (req, res, next) => {
 
     next();
   } catch (error) {
-    return res.status(500).json({ message: "Invalid token", error: error.message });
+    // 401 taake frontend session-expired flow (logout -> login page) chale.
+    return res.status(401).json({ success: false, message: "Session expired. Please login again." });
 
   }
 };
