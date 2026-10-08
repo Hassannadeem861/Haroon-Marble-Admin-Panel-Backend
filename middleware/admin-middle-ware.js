@@ -1,12 +1,13 @@
-import jwt from "jsonwebtoken";
 import adminModel from "../models/admin-auth-model.js";
 import dotenv from "dotenv";
+import { verifyAccessToken } from "../utils/auth-token-service.js";
 
 dotenv.config();
 
-const authMiddleware = async (req, res, next) => {
+const JWT_ERRORS = ["TokenExpiredError", "JsonWebTokenError", "NotBeforeError"];
 
-  // const token = req.cookies?.token
+// Sirf 15 minute wala access token (Bearer header) — expire hone par 401, frontend khud refresh karta hai.
+const authMiddleware = async (req, res, next) => {
   const authHeader = req.headers?.authorization;
   const token = authHeader?.startsWith("Bearer ") ? authHeader.split(" ")[1] : null;
 
@@ -17,24 +18,19 @@ const authMiddleware = async (req, res, next) => {
     });
   }
 
+  let payload;
   try {
-
-    const verifyToken = jwt.verify(token, process.env.JWT_SECRET);
-
-    //  const admin = await adminModel.findById(verifyToken.adminId);
-
-    //  if (!admin) {
-    //     return res.status(200).json({ message: "Admin not found" });
-    //   }
-
-    req.admin = verifyToken;
-
-    next();
+    payload = verifyAccessToken(token);
   } catch (error) {
-    // 401 taake frontend session-expired flow (logout -> login page) chale.
-    return res.status(401).json({ success: false, message: "Session expired. Please login again." });
-
+    if (error.status === 401 || JWT_ERRORS.includes(error.name)) {
+      return res.status(401).json({ success: false, message: "Session expired. Please login again." });
+    }
+    console.error("Auth middleware error:", error);
+    return res.status(500).json({ success: false, message: "Server error. Please try again." });
   }
+
+  req.admin = payload;
+  next();
 };
 
 const adminMiddleWare = async (req, res, next) => {

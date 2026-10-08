@@ -175,6 +175,10 @@ New code must coerce and clamp: `page = Math.max(parseInt(page) || 1, 1)`, `limi
   - `SiteIssue` = a problem during a round (date, description, `causedBy` client/company/material/weather/other,
     up to 5 photos, `resolvedDate`). `isResolved` / `delayDays` are computed in `formatSiteIssue`, not stored.
     Day counts use Pakistan calendar days (`daysBetween` in `work-order-service.js`) — reuse it.
+  - `WorkDay` = one day of work inside a round (daily log: `date` stored as 00:00 PKT + `note`). The round's start day
+    is not stored as a WorkDay; `getWorkOrderTimeline` returns `round.dailyLog` = start day (`isStartDay`) + WorkDays
+    and `stats.loggedWorkDays`. One date per round, between start (exclusive) and `sampleReadyDate`; past dates allowed
+    (backfilling a month). Changing round dates is rejected if a WorkDay would fall outside them.
   - Sample-round writes use `mongoose.startSession()` + `withTransaction` (Atlas replica set). Follow that for
     any new multi-collection write.
   - FactoryWork/vehicle `totalPaid`, `remainingAmount`, `paymentStatus` are virtuals, not stored.
@@ -210,8 +214,15 @@ New code must coerce and clamp: `page = Math.max(parseInt(page) || 1, 1)`, `limi
 
 ## 8. Authentication & authorization
 
-- Login (`POST /api/v1/login`) returns a JWT signed with `JWT_SECRET`, payload `{ userId, email }`. The client sends
-  `Authorization: Bearer <token>`. The `token` cookie set at login is **not** read by the middleware.
+- Access + refresh tokens (`utils/auth-token-service.js`, `models/session-model.js`):
+  - `POST /login` → `{ success, message, user (no password), token }`; `token` = access JWT (15 min, `ACCESS_TOKEN_SECRET`,
+    payload `{ userId, email, type: "access" }`) sent as `Authorization: Bearer`. Also sets the `refreshToken` cookie
+    (random, 30 days, httpOnly, `sameSite: strict`, path `/api/v1`); only its SHA-256 hash is stored in `Session`.
+  - `POST /refresh-token` rotates the session (old revoked, new cookie) → `{ data: { accessToken, user } }`. A revoked
+    token reused after the 60 s grace window revokes all sessions of that user. `POST /logout` revokes + clears cookie.
+  - The cookie only works because the frontend calls the API same-origin (`/api/v1` via its `vercel.json` rewrite /
+    Vite proxy). Do not switch the frontend back to calling the backend domain directly.
+  - `JWT_SECRET` is now only for password-reset tokens.
 - `authMiddleware` (`middleware/admin-middle-ware.js`) verifies the token and sets `req.admin` to the decoded payload
   (so the user id is `req.admin.userId`). It does not load the user from the DB.
 - An invalid/expired token returns **401** (the frontend logs the user out on 401).
@@ -245,7 +256,7 @@ New code must coerce and clamp: `page = Math.max(parseInt(page) || 1, 1)`, `limi
 
 ## 10. Configuration & environment
 
-Variables read by the code: `MONGODB_URI`, `PORT`, `JWT_SECRET`, `FRONTEND_LIVE_URL` (the only CORS origin),
+Variables read by the code: `MONGODB_URI`, `PORT`, `JWT_SECRET` (reset-password only), `ACCESS_TOKEN_SECRET` (required, login access tokens), `FRONTEND_LIVE_URL` (the only CORS origin),
 `MY_EMAIL`, `MY_PASSWORD`, `SERVER_URL` (password-reset mail; the last three are not in `.env`).
 `FRONTEND_LOCAL_URL` (CORS origin used during local dev — `server.js` switches between the two by commenting).
 Cloudinary: `CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` (required; missing → error logged at startup),

@@ -3,8 +3,25 @@ import jwt from "jsonwebtoken";
 import User from "../models//admin-auth-model.js";
 import dotenv from "dotenv";
 import nodemailer from "nodemailer";
+import {
+  REFRESH_COOKIE,
+  signAccessToken,
+  createSession,
+  rotateSession,
+  revokeSession,
+  setRefreshCookie,
+  clearRefreshCookie,
+} from "../utils/auth-token-service.js";
 
 dotenv.config();
+
+// Response mein kabhi password hash na jaye.
+const toSafeUser = (user) => ({
+  _id: user._id,
+  username: user.username,
+  email: user.email,
+  status: user.status,
+});
 
 const register = async (req, res) => {
   try {
@@ -43,40 +60,53 @@ const login = async (req, res) => {
     const { email, password } = req.body;
 
     if (!email || !password) {
-      return res
-        .status(403)
-        .json({ message: "Email and password are required" });
+      return res.status(400).json({ success: false, message: "Email and password are required" });
     }
 
-    const user = await User.findOne({ email: email.toLowerCase() }).select(
-      "+password",
-    );
+    const user = await User.findOne({ email: String(email).toLowerCase(), deleted_at: null }).select("+password");
 
     if (!user || !(await bcrypt.compare(password, user.password))) {
-      return res.status(404).json({ message: "Invalid email or password" });
+      return res.status(401).json({ success: false, message: "Invalid email or password" });
     }
 
-    const token = jwt.sign(
-      {
-        userId: user._id,
-        email: user.email,
-      },
-      process.env.JWT_SECRET,
-    );
+    // Access token response mein (frontend memory mein rakhta hai), refresh token httpOnly cookie mein.
+    const token = signAccessToken(user);
+    const refreshToken = await createSession(user._id, req.headers["user-agent"]);
+    setRefreshCookie(res, refreshToken);
+    res.clearCookie("token"); // purane login ka cookie (ab use nahi hota)
 
-    return res
-      .status(201)
-      .cookie("token", token, {
-        httpOnly: true, // JS not access the code
-        secure: false, //HTTP required
-        maxage: 15 * 24 * 60 * 60 * 1000, // 15 days
-        sameSite: "none", // cross site request allowed
-      })
-      .json({ message: `Login successful in ${user.username}`, user, token });
+    return res.status(200).json({
+      success: true,
+      message: `Login successful in ${user.username}`,
+      user: toSafeUser(user),
+      token,
+    });
   } catch (error) {
-    return res
-      .status(500)
-      .json({ message: " Login failed", error: error.message });
+    console.error("Login failed:", error);
+    return res.status(500).json({ success: false, message: "Login failed" });
+  }
+};
+
+// POST /refresh-token — cookie wala refresh token -> naya access token (+ rotate ho kar naya cookie).
+const refreshToken = async (req, res) => {
+  try {
+    const { userId, newToken } = await rotateSession(req.cookies?.[REFRESH_COOKIE], req.headers["user-agent"]);
+
+    const user = await User.findOne({ _id: userId, deleted_at: null });
+    if (!user) {
+      clearRefreshCookie(res);
+      return res.status(401).json({ success: false, message: "Session expired. Please login again." });
+    }
+
+    if (newToken) setRefreshCookie(res, newToken);
+    return res.status(200).json({ success: true, data: { accessToken: signAccessToken(user), user: toSafeUser(user) } });
+  } catch (error) {
+    if (error.status === 401) {
+      clearRefreshCookie(res);
+      return res.status(401).json({ success: false, message: error.message });
+    }
+    console.error("Refresh token failed:", error);
+    return res.status(500).json({ success: false, message: "Could not refresh session." });
   }
 };
 
@@ -134,13 +164,16 @@ const getSingleAdmin = async (req, res) => {
   }
 };
 
+// POST /logout — is device ka session DB mein band, cookie saaf.
 const logout = async (req, res) => {
   try {
-    res.clearCookie("token").status(200).json({ message: "Logout successful" });
+    await revokeSession(req.cookies?.[REFRESH_COOKIE]);
+    clearRefreshCookie(res);
+    res.clearCookie("token");
+    return res.status(200).json({ success: true, message: "Logout successful" });
   } catch (error) {
-    return res
-      .status(500)
-      .json({ message: "Logout failed", error: error.message });
+    console.error("Logout failed:", error);
+    return res.status(500).json({ success: false, message: "Logout failed" });
   }
 };
 
@@ -377,6 +410,7 @@ const resetPassword = async (req, res) => {
 export {
   register,
   login,
+  refreshToken,
   getAllAmins,
   updateAdmin,
   deleteAdmin,

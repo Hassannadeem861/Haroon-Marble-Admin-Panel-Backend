@@ -1,10 +1,11 @@
 import mongoose from "mongoose";
 import SampleRound from "../models/sample-round-model.js";
 import SiteIssue from "../models/site-issue-model.js";
+import WorkDay from "../models/work-day-model.js";
 import WorkOrder from "../models/work-order-model.js";
 import { formatToDDMMYYYY, resolveEntryDate } from "../utils/date-helper-fun.js";
 import { isValidObjectIdString, isMongooseInputError } from "../utils/validators.js";
-import { getLatestRound, syncWorkOrderStatus } from "../utils/work-order-service.js";
+import { getLatestRound, pakistanDayIndex, syncWorkOrderStatus } from "../utils/work-order-service.js";
 
 /**
  * Naye flow mein ek SampleRound = kaam ka ek round (attempt):
@@ -42,6 +43,20 @@ const validateRoundDates = (round) => {
   }
   if (ready && response && response < ready) {
     throw badRequest("Client ke jawab ki date, kaam mukammal hone ki date se pehle nahi ho sakti.");
+  }
+};
+
+// Roz ke kaam (WorkDay) ke din round ki shuru aur mukammal date ke darmiyan hon (Pakistan ke din se).
+const validateWorkDaysInRange = async (round, session) => {
+  const days = await WorkDay.find({ roundId: round._id, deleted_at: null }).select("date").session(session).lean();
+  if (!days.length) return;
+  const dayIndexes = days.map((d) => pakistanDayIndex(d.date));
+  if (round.sampleStartDate && Math.min(...dayIndexes) <= pakistanDayIndex(round.sampleStartDate)) {
+    throw badRequest("Kaam shuru ki date, roz ke kaam ki pehli entry se pehle honi chahiye.");
+  }
+  if (round.sampleReadyDate && Math.max(...dayIndexes) > pakistanDayIndex(round.sampleReadyDate)) {
+    const last = days[dayIndexes.indexOf(Math.max(...dayIndexes))];
+    throw badRequest(`${formatToDDMMYYYY(last.date)} ka kaam add hai — mukammal date us se pehle nahi ho sakti.`);
   }
 };
 
@@ -200,6 +215,7 @@ const updateSampleRound = async (req, res) => {
       }
 
       validateRoundDates(round);
+      await validateWorkDaysInRange(round, session);
       await round.save({ session });
       await syncWorkOrderStatus(round.workOrderId, session);
     });

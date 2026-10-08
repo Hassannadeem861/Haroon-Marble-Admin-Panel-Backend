@@ -68,6 +68,7 @@ import dashboardRoutes from "./routes/dashboard-routes.js";
 import workOrderRoutes from "./routes/work-order-route.js";
 import sampleRoundRoutes from "./routes/sample-round-route.js";
 import siteIssueRoutes from "./routes/site-issue-route.js";
+import workDayRoutes from "./routes/work-day-route.js";
 import multer from "multer";
 
 
@@ -77,6 +78,7 @@ app.use("/api/v1", employerRouter);
 app.use("/api/v1", workOrderRoutes);
 app.use("/api/v1", sampleRoundRoutes);
 app.use("/api/v1", siteIssueRoutes);
+app.use("/api/v1", workDayRoutes);
 app.use("/api/v1", DailyWorkRoutes);
 app.use("/api/v1/factory-work", factoryWorkRoutes);
 app.use("/api/v1/site", SiteRoutes);
