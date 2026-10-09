@@ -135,8 +135,11 @@ New code must coerce and clamp: `page = Math.max(parseInt(page) || 1, 1)`, `limi
 
 ## 6. Models / database
 
-- Connection: `database/db.js` calls `mongoose.connect(MONGODB_URI)` once at startup; do not open connections
-  in controllers. Scripts in `scripts/` connect/disconnect on their own.
+- Connection: `database/db.js` `connectDB()` caches one connect promise (retries on the next call if it failed).
+  `server.js` starts it at boot **and** awaits it in an `/api/v1` middleware (503 if it fails): on a Vercel cold start
+  the connection used to outlast Mongoose's 10 s buffer timeout, so the first request returned 500 and the second
+  worked. Keep that middleware. Do not open connections in controllers. Call `mongoose.startSession()` inside the
+  handler's `try` (use `session?.endSession()` in `finally`). Scripts in `scripts/` connect/disconnect on their own.
 - Schema conventions (keep them):
   - camelCase fields; foreign keys named `<model>Id` with `ref` and `index: true` (`employerId`, `siteId`, `workOrderId`).
   - Timestamps: `{ timestamps: { createdAt: "created_at", updatedAt: "updated_at" } }`. Sort on `created_at`, never `createdAt`.
@@ -268,8 +271,9 @@ Backups use GitHub secrets `MONGODB_URI`, `RCLONE_CONFIG_B64`.
 - ES module imports run before `server.js`'s `dotenv.config()` line, so a module that reads `process.env` at
   import time (top level) must call `dotenv.config()` itself (as `database/db.js` and `utils/cloudinary.js` do).
   Prefer reading env inside functions.
-- Locally, Atlas SRV lookups need `dns.setServers(["1.1.1.1","8.8.8.8"])` (done in `database/db.js`); copy it into
-  any standalone script that connects to the DB.
+- Locally, Atlas SRV lookups need `dns.setServers(["1.1.1.1","8.8.8.8"])` (done in `database/db.js`, skipped when
+  `process.env.VERCEL` is set, where it slowed the cold-start connection); copy it into any standalone script that
+  connects to the DB.
 - Add any new env var to this list and fail fast with a clear message if it is required and missing.
 
 ## 11. Dependencies

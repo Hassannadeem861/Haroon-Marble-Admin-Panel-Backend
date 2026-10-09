@@ -69,8 +69,9 @@ const sendError = (res, error, fallbackMessage) => {
 
 // POST /create-sample-round — "Kaam Shuru" (pehla round) ya "Rework" (reject ke baad naya round).
 const createSampleRound = async (req, res) => {
-  const session = await mongoose.startSession();
+  let session;
   try {
+    session = await mongoose.startSession();
     const { workOrderId, workStartDate, sampleStartDate, description } = req.body;
 
     if (!workOrderId || !isValidObjectIdString(workOrderId)) {
@@ -128,14 +129,15 @@ const createSampleRound = async (req, res) => {
   } catch (error) {
     return sendError(res, error, "Error creating sample round.");
   } finally {
-    await session.endSession();
+    await session?.endSession();
   }
 };
 
 // PUT /update-sample-round/:id — "Kaam Mukammal" (sampleReadyDate) ya "Client ka Jawab".
 const updateSampleRound = async (req, res) => {
-  const session = await mongoose.startSession();
+  let session;
   try {
+    session = await mongoose.startSession();
     const { id } = req.params;
     const {
       workStartDate,
@@ -224,14 +226,15 @@ const updateSampleRound = async (req, res) => {
   } catch (error) {
     return sendError(res, error, "Error updating sample round.");
   } finally {
-    await session.endSession();
+    await session?.endSession();
   }
 };
 
 // DELETE /delete-sample-round/:id — soft delete (rare — mistaken entry only)
 const deleteSampleRound = async (req, res) => {
-  const session = await mongoose.startSession();
+  let session;
   try {
+    session = await mongoose.startSession();
     const { id } = req.params;
     if (!isValidObjectIdString(id)) {
       return res.status(400).json({ success: false, message: "Invalid round id." });
@@ -254,7 +257,7 @@ const deleteSampleRound = async (req, res) => {
   } catch (error) {
     return sendError(res, error, "Error deleting sample round.");
   } finally {
-    await session.endSession();
+    await session?.endSession();
   }
 };
 
