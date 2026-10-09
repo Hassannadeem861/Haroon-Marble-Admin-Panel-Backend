@@ -14,7 +14,7 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 
-connectDB();
+connectDB().catch(() => {}); // error db.js log karta hai; agli request dobara try karti hai
 
 // Step 1: CORS setup fix
 const allowedOrigins = [
@@ -55,6 +55,17 @@ app.use("/uploads", express.static(path.join(__dirname, "public/uploads")));
 
 app.get("/", (req, res) => {
   return res.status(200).json({ message: "Hello world" });
+});
+
+// Vercel cold start: har API request DB connect hone tak rukti hai. Iske baghair pehli request
+// Mongoose ke 10s buffer timeout par 500 deti thi aur doosri chal jati thi.
+app.use("/api/v1", async (req, res, next) => {
+  try {
+    await connectDB();
+    next();
+  } catch {
+    return res.status(503).json({ success: false, message: "Database se connect nahi ho saka. Dobara koshish karein." });
+  }
 });
 
 import AdminAuthRouter from "./routes/admin-auth-route.js";
