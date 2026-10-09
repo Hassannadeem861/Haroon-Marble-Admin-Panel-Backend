@@ -3,20 +3,37 @@ dotenv.config();
 import dns from "dns/promises"
 import mongoose from "mongoose";
 
-dns.setServers([
-  "1.1.1.1",
-  "8.8.8.8"
-])
+// Local ISP ka DNS Atlas ka SRV record resolve nahi karta, is liye sirf local par public DNS.
+// Vercel par isay na lagao — wahan apna DNS tez hai, ye lookup ko slow kar deta hai (cold start 10s+).
+if (!process.env.VERCEL) {
+  dns.setServers([
+    "1.1.1.1",
+    "8.8.8.8"
+  ])
+}
 
 const mongodbURI = process.env.MONGODB_URI;
-const connectDB = async () => {
-  try {
-    await mongoose.connect(mongodbURI);
-    console.log("Database is connected");
-  } catch (error) {
-    console.error("Mongoose connection error:", error.message);
-    // process.exit(1);
+
+// Serverless (Vercel) par ek hi connection promise share hota hai; fail ho to agli request dobara try karti hai.
+let connectionPromise = null;
+
+const connectDB = () => {
+  if (mongoose.connection.readyState === 1) return Promise.resolve();
+
+  if (!connectionPromise) {
+    const startedAt = Date.now();
+    connectionPromise = mongoose
+      .connect(mongodbURI, { serverSelectionTimeoutMS: 15000 })
+      .then(() => {
+        console.log(`Database is connected (${Date.now() - startedAt} ms)`);
+      })
+      .catch((error) => {
+        connectionPromise = null;
+        console.error("Mongoose connection error:", error.message);
+        throw error;
+      });
   }
+  return connectionPromise;
 };
 
 mongoose.connection.on("connected", () => {
